@@ -10,6 +10,7 @@ let appConfig = null;
 let currentMobile = "";
 let currentCustomerData = null;
 let adminCharts = {};
+let adminLoggedIn = false;
 
 // ===== HELPERS =====
 function getISTNow() {
@@ -37,7 +38,7 @@ function showToast(message, type = "") {
   toast.textContent = message;
   toast.className = "toast" + (type ? " " + type : "");
   requestAnimationFrame(() => toast.classList.add("show"));
-  setTimeout(() => toast.classList.remove("show"), 3000);
+  setTimeout(() => toast.classList.remove("show"), 3200);
 }
 
 async function apiCall(action, params = {}) {
@@ -55,13 +56,67 @@ async function apiCall(action, params = {}) {
   }
 }
 
-// ===== LOGIN =====
-document.getElementById("loginForm").addEventListener("submit", async (e) => {
+// ===== THEME TOGGLE =====
+(function initTheme() {
+  const saved = localStorage.getItem("ppp_theme") || "dark";
+  document.documentElement.setAttribute("data-theme", saved);
+  updateThemeIcon(saved);
+})();
+
+function updateThemeIcon(theme) {
+  const icon = document.getElementById("themeIcon");
+  if (icon) icon.textContent = theme === "dark" ? "☀️" : "🌙";
+}
+
+document.getElementById("themeToggle").addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  const next = current === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem("ppp_theme", next);
+  updateThemeIcon(next);
+});
+
+// ===== TABS =====
+function switchTab(tab) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById(tab === "entry" ? "tabEntry" : "tabAdmin").classList.add("active");
+  document.getElementById("entrySection").classList.toggle("hidden", tab !== "entry");
+  document.getElementById("adminSection").classList.toggle("hidden", tab !== "admin");
+  if (tab === "admin" && adminLoggedIn) loadAdminData();
+}
+
+document.getElementById("tabEntry").addEventListener("click", () => switchTab("entry"));
+
+document.getElementById("tabAdmin").addEventListener("click", () => {
+  if (!adminLoggedIn) {
+    // Show admin login modal
+    document.getElementById("adminLoginModal").classList.remove("hidden");
+    document.getElementById("adminUser").focus();
+  } else {
+    switchTab("admin");
+  }
+});
+
+// ===== ADMIN LOGIN MODAL =====
+document.getElementById("adminLoginClose").addEventListener("click", () => {
+  document.getElementById("adminLoginModal").classList.add("hidden");
+  document.getElementById("adminLoginError").textContent = "";
+  document.getElementById("adminUser").value = "";
+  document.getElementById("adminPass").value = "";
+});
+
+document.getElementById("adminLoginModal").addEventListener("click", (e) => {
+  if (e.target === document.getElementById("adminLoginModal")) {
+    document.getElementById("adminLoginClose").click();
+  }
+});
+
+document.getElementById("adminLoginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const user = document.getElementById("loginUser").value.trim();
-  const pass = document.getElementById("loginPass").value.trim();
-  const errEl = document.getElementById("loginError");
-  const btn = document.getElementById("loginBtn");
+  const user = document.getElementById("adminUser").value.trim();
+  const pass = document.getElementById("adminPass").value.trim();
+  const errEl = document.getElementById("adminLoginError");
+  const btn = document.getElementById("adminLoginBtn");
 
   if (!user || !pass) {
     errEl.textContent = "Please fill in both fields.";
@@ -69,21 +124,25 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   }
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Logging in...';
+  btn.innerHTML = '<span class="spinner"></span> Verifying...';
   errEl.textContent = "";
 
   const result = await apiCall("login", { username: user, password: pass });
 
   if (result.success) {
-    sessionStorage.setItem("loggedIn", "true");
-    // Also fetch config
+    adminLoggedIn = true;
+    sessionStorage.setItem("adminLoggedIn", "true");
+
+    // Fetch and cache config
     const configResult = await apiCall("getConfig");
-    if (configResult.success) {
-      appConfig = configResult;
-    }
-    document.getElementById("loginView").classList.add("hidden");
-    document.getElementById("appView").classList.remove("hidden");
-    showToast("Welcome back! 🍕", "success");
+    if (configResult.success) appConfig = configResult;
+
+    document.getElementById("adminLoginModal").classList.add("hidden");
+    document.getElementById("logoutBtn").classList.remove("hidden");
+    document.getElementById("adminUser").value = "";
+    document.getElementById("adminPass").value = "";
+    switchTab("admin");
+    showToast("Admin access granted 🔓", "success");
   } else {
     errEl.textContent = result.error || "Login failed.";
   }
@@ -94,26 +153,21 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
 
 // ===== LOGOUT =====
 document.getElementById("logoutBtn").addEventListener("click", () => {
-  sessionStorage.removeItem("loggedIn");
-  document.getElementById("appView").classList.add("hidden");
-  document.getElementById("loginView").classList.remove("hidden");
-  document.getElementById("loginUser").value = "";
-  document.getElementById("loginPass").value = "";
+  adminLoggedIn = false;
+  sessionStorage.removeItem("adminLoggedIn");
+  document.getElementById("logoutBtn").classList.add("hidden");
+  switchTab("entry");
+  showToast("Logged out successfully.");
 });
 
-// ===== TABS =====
-document.querySelectorAll(".tab-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    const tab = btn.dataset.tab;
-    document.getElementById("entrySection").classList.toggle("hidden", tab !== "entry");
-    document.getElementById("adminSection").classList.toggle("hidden", tab !== "admin");
-    if (tab === "admin") loadAdminData();
-  });
-});
+// ===== RESTORE ADMIN SESSION =====
+if (sessionStorage.getItem("adminLoggedIn") === "true") {
+  adminLoggedIn = true;
+  document.getElementById("logoutBtn").classList.remove("hidden");
+}
 
 // ===== ADD ENTRY BUTTON =====
+// Single optimized API call (checkMobile + getCustomerData combined)
 document.getElementById("addEntryBtn").addEventListener("click", async () => {
   const mobile = document.getElementById("mobileInput").value.trim();
   const errEl = document.getElementById("mobileError");
@@ -128,35 +182,93 @@ document.getElementById("addEntryBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
 
-  // Check if mobile can add entry today
-  const checkResult = await apiCall("checkMobile", { mobile });
-
-  if (!checkResult.success) {
-    errEl.textContent = checkResult.error;
-    btn.disabled = false;
-    btn.innerHTML = "Add Entry";
-    return;
-  }
-
-  // Fetch customer data
-  const custResult = await apiCall("getCustomerData", { mobile });
+  // Single combined API call — replaces two sequential calls for speed
+  const result = await apiCall("openCustomer", { mobile });
 
   btn.disabled = false;
   btn.innerHTML = "Add Entry";
 
-  if (!custResult.success) {
-    errEl.textContent = custResult.error || "Error loading customer data.";
+  if (!result.success) {
+    errEl.textContent = result.error || "Error loading customer data.";
     return;
   }
 
-  currentMobile = mobile;
-  currentCustomerData = custResult;
-  appConfig = appConfig || {};
-  appConfig.cycle = custResult.cycle;
-  appConfig.rewardValue = custResult.rewardValue;
-  appConfig.minAmount = custResult.minAmount;
+  // Clear mobile input for next entry
+  document.getElementById("mobileInput").value = "";
 
-  openCustomerModal(custResult);
+  currentMobile = mobile;
+  currentCustomerData = result;
+
+  // Cache config from response
+  appConfig = appConfig || {};
+  appConfig.cycle = result.cycle;
+  appConfig.rewardValue = result.rewardValue;
+  appConfig.minAmount = result.minAmount;
+
+  // ===== POINT 8: Gift popup for eligible customers =====
+  if (result.eligible) {
+    openGiftModal(result);
+  } else {
+    openCustomerModal(result);
+  }
+});
+
+// Enter key on mobile input
+document.getElementById("mobileInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    document.getElementById("addEntryBtn").click();
+  }
+});
+
+// Only numeric input
+document.getElementById("mobileInput").addEventListener("input", (e) => {
+  e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
+});
+
+// ===== GIFT MODAL =====
+function openGiftModal(data) {
+  document.getElementById("giftMobileDisplay").textContent = currentMobile;
+  document.getElementById("giftValueDisplay").textContent = "₹" + (data.rewardValue || 150);
+  document.getElementById("giftError").textContent = "";
+
+  const claimBtn = document.getElementById("claimGiftBtn");
+  claimBtn.disabled = false;
+  claimBtn.innerHTML = "🎉 Claim Free Meal Now";
+
+  document.getElementById("giftModal").classList.remove("hidden");
+}
+
+document.getElementById("claimGiftBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("claimGiftBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Claiming...';
+  document.getElementById("giftError").textContent = "";
+
+  const result = await apiCall("claimReward", { mobile: currentMobile });
+
+  if (result.success) {
+    showToast("Reward claimed! 🎁🎉", "success");
+
+    // Update customer data with claimed state
+    currentCustomerData.rewardsClaimed = result.rewardsClaimed;
+    currentCustomerData.eligible = result.eligible;
+    currentCustomerData.totalEntries = result.totalEntries;
+
+    document.getElementById("giftModal").classList.add("hidden");
+
+    // Open normal entry modal so they can log today's visit
+    openCustomerModal(currentCustomerData);
+  } else {
+    document.getElementById("giftError").textContent = result.error || "Failed to claim reward.";
+    btn.disabled = false;
+    btn.innerHTML = "🎉 Claim Free Meal Now";
+  }
+});
+
+document.getElementById("skipGiftBtn").addEventListener("click", () => {
+  document.getElementById("giftModal").classList.add("hidden");
+  openCustomerModal(currentCustomerData);
 });
 
 // ===== CUSTOMER MODAL =====
@@ -186,60 +298,48 @@ function openCustomerModal(data) {
     rewardsSection.style.display = "none";
   }
 
-  // Eligibility
+  // Eligibility (post-claim eligible state means save is still allowed)
   const banner = document.getElementById("eligibilityBanner");
-  const claimSection = document.getElementById("claimSection");
-  const entryForm = document.getElementById("entryForm");
   const saveBtn = document.getElementById("saveEntryBtn");
 
+  banner.style.display = "";
   if (data.eligible) {
-    banner.style.display = "";
     banner.className = "eligibility-banner eligible";
-    banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + (data.rewardValue || 150) + ")! Claim now!";
-    claimSection.style.display = "";
-    // On 11th/21st entry force claim: disable save
-    saveBtn.disabled = true;
-    saveBtn.title = "Must claim reward first";
+    banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + (data.rewardValue || 150) + ")!";
+    saveBtn.disabled = false;
+    saveBtn.title = "";
   } else {
-    banner.style.display = "";
     banner.className = "eligibility-banner not-eligible";
-    const remaining = data.cycle - (data.totalEntries % data.cycle);
+    const pos = data.totalEntries % data.cycle;
+    const remaining = pos === 0 ? data.cycle : data.cycle - pos;
     banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
-    claimSection.style.display = "none";
     saveBtn.disabled = false;
     saveBtn.title = "";
   }
 
-  // Fill date/time
+  // Reset form
   document.getElementById("dateInput").value = getISTDate();
   document.getElementById("timeInput").value = getISTTime();
   document.getElementById("amountInput").value = "";
   document.getElementById("messageInput").value = "";
   document.getElementById("formError").textContent = "";
-
-  // Reset sections
   document.getElementById("whatsappSection").style.display = "none";
   document.getElementById("entriesList").classList.add("hidden");
   document.getElementById("showDetailsBtn").textContent = "📜 Show Past Entry Details";
-  entryForm.style.display = "";
+  document.getElementById("entryForm").style.display = "";
+  saveBtn.innerHTML = "💾 Save Entry";
 
-  // Build past entries (hidden by default)
   buildPastEntries(data.entries || []);
 }
 
 function buildDots(totalEntries, cycle, rewardsClaimed) {
   const section = document.getElementById("dotsSection");
-  // Clear previous content except label
   const label = section.querySelector('.dots-section-label');
   section.innerHTML = '';
   section.appendChild(label);
 
-  // How many complete cycles and current position
   const completedCycles = Math.floor(totalEntries / cycle);
-  const currentPos = totalEntries % cycle;
-
-  // Show each cycle row
-  const totalRows = completedCycles + (currentPos > 0 || totalEntries === 0 ? 1 : 0);
+  const totalRows = completedCycles + (totalEntries % cycle > 0 || totalEntries === 0 ? 1 : 0);
 
   for (let row = 0; row < totalRows; row++) {
     const dotRow = document.createElement("div");
@@ -258,7 +358,6 @@ function buildDots(totalEntries, cycle, rewardsClaimed) {
       const entryNum = row * cycle + d + 1;
       if (entryNum <= totalEntries) {
         dot.classList.add("filled");
-        // If this is the last dot of a completed cycle, mark as reward dot
         if ((entryNum % cycle === 0) && (entryNum / cycle <= rewardsClaimed)) {
           dot.classList.add("reward-dot");
         }
@@ -276,7 +375,6 @@ function buildPastEntries(entries) {
     list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;padding:12px">No past entries yet. This is a new customer!</p>';
     return;
   }
-  // Show in reverse chronological
   const reversed = [...entries].reverse();
   for (const entry of reversed) {
     const item = document.createElement("div");
@@ -292,7 +390,6 @@ function buildPastEntries(entries) {
   }
 }
 
-// Show/Hide past entries
 document.getElementById("showDetailsBtn").addEventListener("click", () => {
   const list = document.getElementById("entriesList");
   const btn = document.getElementById("showDetailsBtn");
@@ -322,16 +419,30 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Saving...';
 
+  // Timeout guard: re-enable after 30s if stuck
+  const timeoutId = setTimeout(() => {
+    if (btn.disabled) {
+      btn.disabled = false;
+      btn.innerHTML = "💾 Save Entry";
+      errEl.textContent = "Request timed out. Please try again.";
+    }
+  }, 30000);
+
   const result = await apiCall("addEntry", {
     mobile: currentMobile,
     amount: amount,
     message: message
   });
 
+  clearTimeout(timeoutId);
+
   if (result.success) {
     showToast("Entry saved! ✅", "success");
 
-    // Update dots
+    // ===== POINT 9 FIX: Always reset button state on success =====
+    btn.disabled = false;
+    btn.innerHTML = "💾 Save Entry";
+
     currentCustomerData.totalEntries = result.totalEntries;
     currentCustomerData.eligible = result.eligible;
     currentCustomerData.rewardsClaimed = result.rewardsClaimed;
@@ -339,16 +450,14 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
 
     // Update eligibility banner
     const banner = document.getElementById("eligibilityBanner");
-    const claimSection = document.getElementById("claimSection");
     if (result.eligible) {
       banner.className = "eligibility-banner eligible";
-      banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + result.rewardValue + ")! Claim now!";
-      claimSection.style.display = "";
+      banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + result.rewardValue + ")!";
     } else {
       banner.className = "eligibility-banner not-eligible";
-      const remaining = result.cycle - (result.totalEntries % result.cycle);
+      const pos = result.totalEntries % result.cycle;
+      const remaining = pos === 0 ? result.cycle : result.cycle - pos;
       banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
-      claimSection.style.display = "none";
     }
 
     // Hide entry form, show WhatsApp
@@ -363,59 +472,9 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   }
 });
 
-// ===== CLAIM REWARD =====
-document.getElementById("claimRewardBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("claimRewardBtn");
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Claiming...';
-
-  const result = await apiCall("claimReward", { mobile: currentMobile });
-
-  if (result.success) {
-    showToast("Reward claimed! 🎁🎉", "success");
-
-    currentCustomerData.rewardsClaimed = result.rewardsClaimed;
-    currentCustomerData.totalEntries = result.totalEntries;
-    currentCustomerData.eligible = result.eligible;
-
-    // Update dots and rewards
-    buildDots(result.totalEntries, result.cycle, result.rewardsClaimed);
-
-    // Update rewards emojis
-    const rewardsSection = document.getElementById("rewardsSection");
-    const rewardsDisplay = document.getElementById("rewardsDisplay");
-    rewardsSection.style.display = "";
-    rewardsDisplay.innerHTML = "";
-    for (let i = 0; i < result.rewardsClaimed; i++) {
-      const span = document.createElement("span");
-      span.className = "reward-emoji";
-      span.textContent = "🎁";
-      span.style.animationDelay = (i * 0.1) + "s";
-      rewardsDisplay.appendChild(span);
-    }
-
-    // Re-enable save button since reward is claimed
-    const saveBtn = document.getElementById("saveEntryBtn");
-    saveBtn.disabled = false;
-    saveBtn.title = "";
-
-    // Update eligibility
-    const banner = document.getElementById("eligibilityBanner");
-    // After claiming, eligible may still be true (since entries didn't change)
-    // but the claim was processed. We let the UI reflect the new state.
-    if (!result.eligible) {
-      banner.className = "eligibility-banner not-eligible";
-      const remaining = result.cycle - (result.totalEntries % result.cycle);
-      banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
-      document.getElementById("claimSection").style.display = "none";
-    }
-
-    btn.innerHTML = "✅ Reward Claimed!";
-  } else {
-    showToast(result.error || "Failed to claim reward.", "error");
-    btn.disabled = false;
-    btn.innerHTML = "🎁 Claim Reward";
-  }
+// Amount input — only numeric
+document.getElementById("amountInput").addEventListener("input", (e) => {
+  e.target.value = e.target.value.replace(/[^\d]/g, "");
 });
 
 // ===== CLOSE MODAL =====
@@ -423,7 +482,10 @@ function closeModal() {
   document.getElementById("customerModal").classList.add("hidden");
   currentMobile = "";
   currentCustomerData = null;
+  // Re-focus mobile input for quick next entry
+  setTimeout(() => document.getElementById("mobileInput").focus(), 100);
 }
+
 document.getElementById("modalCloseBtn").addEventListener("click", closeModal);
 document.getElementById("cancelEntryBtn").addEventListener("click", closeModal);
 document.getElementById("customerModal").addEventListener("click", (e) => {
@@ -452,13 +514,15 @@ function renderAdminStats(data) {
   const grid = document.getElementById("statsGrid");
   grid.innerHTML = "";
 
-  const todayToggleId = "todayToggle";
   const stats = [
     { icon: "👥", value: data.totalCustomers, label: "Total Customers" },
     { icon: "📝", value: data.totalVisits, label: "Total Visits" },
     { icon: "🎁", value: data.totalRewardsGiven, label: "Rewards Given" },
     { icon: "⏳", value: data.rewardsPending, label: "Rewards Pending" },
-    { icon: "📅", value: data.todayEntries, label: "Today's Entries", altValue: "₹" + data.todayAmount, altLabel: "Today's Amount", toggleable: true },
+    {
+      icon: "📅", value: data.todayEntries, label: "Today's Entries",
+      altValue: "₹" + data.todayAmount, altLabel: "Today's Amount", toggleable: true
+    },
     { icon: "💰", value: "₹" + data.avgBilling, label: "Avg Billing" },
     { icon: "📊", value: data.avgVisitsPerCustomer, label: "Avg Visits/Customer" },
     { icon: "🏆", value: data.rewardConversionRate + "%", label: "Reward Conv. Rate" }
@@ -467,7 +531,6 @@ function renderAdminStats(data) {
   stats.forEach((s, i) => {
     const card = document.createElement("div");
     card.className = "stat-card";
-    card.id = "stat-card-" + i;
 
     if (s.toggleable) {
       card.innerHTML =
@@ -476,8 +539,8 @@ function renderAdminStats(data) {
           '<button class="toggle-btn active" data-show="primary">Entries</button>' +
           '<button class="toggle-btn" data-show="alt">Amount</button>' +
         '</div>' +
-        '<div class="stat-value" id="todayStatVal">' + s.value + '</div>' +
-        '<div class="stat-label" id="todayStatLabel">' + s.label + '</div>';
+        '<div class="stat-value">' + s.value + '</div>' +
+        '<div class="stat-label">' + s.label + '</div>';
       card.dataset.primaryVal = s.value;
       card.dataset.primaryLabel = s.label;
       card.dataset.altVal = s.altValue;
@@ -491,21 +554,21 @@ function renderAdminStats(data) {
     grid.appendChild(card);
   });
 
-  // Today's toggle
-  grid.querySelectorAll('.toggle-group .toggle-btn').forEach(btn => {
+  // Today's toggle handlers
+  grid.querySelectorAll('.stat-card .toggle-btn').forEach(btn => {
     btn.addEventListener("click", (e) => {
-      const parent = e.target.closest('.stat-card');
-      parent.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove("active"));
+      const card = e.target.closest('.stat-card');
+      card.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove("active"));
       e.target.classList.add("active");
       const show = e.target.dataset.show;
-      const valEl = parent.querySelector('.stat-value');
-      const labelEl = parent.querySelector('.stat-label');
+      const valEl = card.querySelector('.stat-value');
+      const labelEl = card.querySelector('.stat-label');
       if (show === "alt") {
-        valEl.textContent = parent.dataset.altVal;
-        labelEl.textContent = parent.dataset.altLabel;
+        valEl.textContent = card.dataset.altVal;
+        labelEl.textContent = card.dataset.altLabel;
       } else {
-        valEl.textContent = parent.dataset.primaryVal;
-        labelEl.textContent = parent.dataset.primaryLabel;
+        valEl.textContent = card.dataset.primaryVal;
+        labelEl.textContent = card.dataset.primaryLabel;
       }
     });
   });
@@ -515,7 +578,7 @@ function renderTopCustomers(customers) {
   const tbody = document.querySelector("#topCustomersTable tbody");
   tbody.innerHTML = "";
   if (!customers || customers.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);text-align:center">No data</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);text-align:center;padding:20px">No data yet</td></tr>';
     return;
   }
   customers.forEach((c, i) => {
@@ -525,27 +588,69 @@ function renderTopCustomers(customers) {
   });
 }
 
+// ===== POINT 6: Revamped Repeat vs New chart =====
 function renderRepeatChart(repeat, newC) {
+  const total = repeat + newC;
+
+  // Populate the stats side
+  const side = document.getElementById("repeatStatsSide");
+  side.innerHTML = "";
+
+  const items = [
+    { value: total, label: "Total Customers", class: "" },
+    { value: repeat, label: "Repeat Customers", class: "" },
+    { value: newC, label: "New Customers", class: "green" },
+    { value: total > 0 ? ((repeat / total) * 100).toFixed(1) + "%" : "0%", label: "Repeat Rate", class: "" },
+  ];
+
+  items.forEach(item => {
+    const card = document.createElement("div");
+    card.className = "repeat-stat-card";
+    card.innerHTML =
+      '<div class="repeat-stat-value ' + item.class + '">' + item.value + '</div>' +
+      '<div class="repeat-stat-label">' + item.label + '</div>';
+    side.appendChild(card);
+  });
+
+  // Draw chart
   const ctx = document.getElementById("repeatChart").getContext("2d");
   if (adminCharts.repeat) adminCharts.repeat.destroy();
+
   adminCharts.repeat = new Chart(ctx, {
     type: "doughnut",
     data: {
-      labels: ["Repeat Customers", "New Customers"],
+      labels: ["Repeat", "New"],
       datasets: [{
         data: [repeat, newC],
-        backgroundColor: ["#ff8c32", "#e84545"],
+        backgroundColor: ["#ff8c32", "#34d399"],
         borderColor: "transparent",
         borderWidth: 0,
+        hoverOffset: 6
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      cutout: "68%",
       plugins: {
         legend: {
           position: "bottom",
-          labels: { color: "#a89e94", font: { family: "Outfit" } }
+          labels: {
+            color: "var(--text-muted, #6b6058)",
+            font: { family: "Outfit", size: 12 },
+            padding: 16,
+            usePointStyle: true,
+            pointStyleWidth: 8
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              const val = ctx.raw;
+              const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+              return " " + val + " (" + pct + "%)";
+            }
+          }
         }
       }
     }
@@ -554,6 +659,7 @@ function renderRepeatChart(repeat, newC) {
 
 // ===== HEATMAP =====
 let heatmapType = "entries";
+
 document.querySelectorAll("#heatmapToggle .toggle-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("#heatmapToggle .toggle-btn").forEach(b => b.classList.remove("active"));
@@ -584,11 +690,9 @@ function renderHeatmap(data, type) {
 
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-  // Find max for color scaling
   let maxVal = 0;
   data.forEach(row => row.forEach(v => { if (v > maxVal) maxVal = v; }));
 
-  // Hour labels
   const hourRow = document.createElement("div");
   hourRow.className = "heatmap-hour-labels";
   hourRow.innerHTML = '<div></div>';
@@ -652,80 +756,86 @@ document.getElementById("calcVisitsBtn").addEventListener("click", async () => {
   renderTimeBetween(result);
 });
 
+// ===== POINT 6: Revamped Time Between Visits =====
 function renderTimeBetween(data) {
   const area = document.getElementById("timeBetweenArea");
   area.innerHTML = "";
 
-  // Stats cards
   const statsDiv = document.createElement("div");
   statsDiv.className = "visit-stats";
+
   const items = [
-    { value: data.avgGap + "d", label: "Average Gap" },
-    { value: data.medianGap + "d", label: "Median Gap" },
+    { value: data.avgGap + "d", label: "Avg Gap" },
+    { value: data.medianGap + "d", label: "Median" },
     { value: data.minGap + "d", label: "Min Gap" },
     { value: data.maxGap + "d", label: "Max Gap" },
     { value: data.totalGaps, label: "Total Gaps" }
   ];
+
   items.forEach(item => {
     const div = document.createElement("div");
     div.className = "visit-stat";
-    div.innerHTML = '<div class="visit-stat-value">' + item.value + '</div>' +
-                    '<div class="visit-stat-label">' + item.label + '</div>';
+    div.innerHTML =
+      '<div class="visit-stat-value">' + item.value + '</div>' +
+      '<div class="visit-stat-label">' + item.label + '</div>';
     statsDiv.appendChild(div);
   });
   area.appendChild(statsDiv);
 
-  // Distribution chart
+  if (data.totalGaps === 0) {
+    const msg = document.createElement("p");
+    msg.style.cssText = "color:var(--text-muted);font-size:0.85rem;margin-top:16px";
+    msg.textContent = "Not enough visit data to calculate gaps yet.";
+    area.appendChild(msg);
+    return;
+  }
+
   const chartWrap = document.createElement("div");
-  chartWrap.className = "chart-wrap";
-  chartWrap.style.marginTop = "20px";
+  chartWrap.className = "visit-dist-wrap";
   const canvas = document.createElement("canvas");
   canvas.id = "visitDistChart";
+  canvas.style.maxHeight = "260px";
   chartWrap.appendChild(canvas);
   area.appendChild(chartWrap);
 
   if (adminCharts.visitDist) adminCharts.visitDist.destroy();
+
   adminCharts.visitDist = new Chart(canvas.getContext("2d"), {
     type: "bar",
     data: {
-      labels: Object.keys(data.distribution),
+      labels: Object.keys(data.distribution).map(k => k + " days"),
       datasets: [{
         label: "Visit Gaps",
         data: Object.values(data.distribution),
-        backgroundColor: "rgba(255, 140, 50, 0.6)",
+        backgroundColor: "rgba(255, 140, 50, 0.55)",
         borderColor: "#ff8c32",
-        borderWidth: 1,
-        borderRadius: 6
+        borderWidth: 1.5,
+        borderRadius: 6,
+        borderSkipped: false
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: true,
       scales: {
-        x: { ticks: { color: "#a89e94", font: { family: "Outfit" } }, grid: { color: "rgba(255,140,50,0.05)" } },
-        y: { ticks: { color: "#a89e94", font: { family: "Outfit" } }, grid: { color: "rgba(255,140,50,0.05)" }, beginAtZero: true }
+        x: {
+          ticks: { color: "#a89e94", font: { family: "Outfit", size: 12 } },
+          grid: { display: false }
+        },
+        y: {
+          ticks: { color: "#a89e94", font: { family: "Outfit", size: 12 }, stepSize: 1 },
+          grid: { color: "rgba(255,140,50,0.06)" },
+          beginAtZero: true
+        }
       },
       plugins: {
-        legend: { display: false }
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => " " + ctx.raw + " customer" + (ctx.raw !== 1 ? "s" : "")
+          }
+        }
       }
     }
   });
 }
-
-// ===== MOBILE INPUT - only numeric =====
-document.getElementById("mobileInput").addEventListener("input", (e) => {
-  e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
-});
-
-// ===== AMOUNT INPUT - only numeric =====
-document.getElementById("amountInput").addEventListener("input", (e) => {
-  e.target.value = e.target.value.replace(/[^\d]/g, "");
-});
-
-// Enter key on mobile input triggers Add Entry
-document.getElementById("mobileInput").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    document.getElementById("addEntryBtn").click();
-  }
-});
