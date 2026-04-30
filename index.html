@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Perfect Pizza Point - Customer Loyalty Tracking System. Track visits, reward loyal customers, and manage your pizza shop rewards program.">
+  <title>Perfect Pizza Point - Loyalty System</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ===== TOAST ===== -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ===== LOGIN VIEW ===== -->
+  <div id="loginView">
+    <div class="login-card">
+      <div class="login-logo">🍕</div>
+      <h1 class="login-title">Perfect Pizza Point</h1>
+      <p class="login-subtitle">Loyalty Management System</p>
+      <form id="loginForm" autocomplete="off">
+        <div class="form-group">
+          <label for="loginUser">Username</label>
+          <input type="text" id="loginUser" placeholder="Enter username" required>
+        </div>
+        <div class="form-group">
+          <label for="loginPass">Password</label>
+          <input type="password" id="loginPass" placeholder="Enter password" required>
+        </div>
+        <div id="loginError" class="error-msg"></div>
+        <button type="submit" class="btn btn-primary" id="loginBtn">
+          🔐 Login
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== APP VIEW ===== -->
+  <div id="appView" class="hidden">
+    <header class="app-header">
+      <div class="app-brand">
+        <span class="app-brand-icon">🍕</span>
+        <span class="app-brand-name">Perfect Pizza Point</span>
+      </div>
+      <div class="header-actions">
+        <button class="tab-btn active" id="tabEntry" data-tab="entry">📝 Entry</button>
+        <button class="tab-btn" id="tabAdmin" data-tab="admin">📊 Admin</button>
+        <button class="logout-btn" id="logoutBtn">Logout</button>
+      </div>
+    </header>
+
+    <!-- ENTRY TAB -->
+    <div id="entrySection" class="entry-view">
+      <h2>Add Customer Entry</h2>
+      <p>Enter the customer's 10-digit mobile number to begin</p>
+      <div class="mobile-input-wrap">
+        <input type="tel" id="mobileInput" placeholder="9876543210" maxlength="10" inputmode="numeric">
+        <button class="btn btn-primary btn-sm" id="addEntryBtn">Add Entry</button>
+      </div>
+      <div id="mobileError" class="error-msg"></div>
+    </div>
+
+    <!-- ADMIN TAB -->
+    <div id="adminSection" class="admin-view hidden">
+      <h2>📊 Shop Analytics</h2>
+      <div class="loading-overlay hidden" id="adminLoading">
+        <div class="spinner"></div>
+        <span>Loading analytics...</span>
+      </div>
+      <div id="adminContent">
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <div class="chart-section">
+          <h3>👥 Top Repeat Customers</h3>
+          <div style="overflow-x:auto">
+            <table class="top-table" id="topCustomersTable">
+              <thead><tr><th>#</th><th>Mobile</th><th>Visits</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="chart-section">
+          <h3>🔁 Repeat vs New Customers</h3>
+          <div class="chart-wrap"><canvas id="repeatChart"></canvas></div>
+        </div>
+
+        <div class="chart-section">
+          <h3>🔥 Day-Hour Heatmap</h3>
+          <div class="toggle-group" id="heatmapToggle">
+            <button class="toggle-btn active" data-type="entries">Entries</button>
+            <button class="toggle-btn" data-type="amount">Amount</button>
+          </div>
+          <button class="calc-btn" id="calcHeatmapBtn">📊 Calculate Heatmap</button>
+          <div id="heatmapArea"></div>
+        </div>
+
+        <div class="chart-section">
+          <h3>⏱️ Time Between Visits</h3>
+          <button class="calc-btn" id="calcVisitsBtn">📊 Calculate</button>
+          <div id="timeBetweenArea"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CUSTOMER POPUP MODAL ===== -->
+  <div id="customerModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>📋 Customer Entry</h3>
+        <button class="modal-close" id="modalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-mobile" id="modalMobile"></div>
+
+        <!-- Dot Visualization -->
+        <div class="dots-section" id="dotsSection">
+          <div class="dots-section-label">Loyalty Progress</div>
+        </div>
+
+        <!-- Rewards Display -->
+        <div id="rewardsSection" style="display:none">
+          <div class="dots-section-label">Rewards Claimed</div>
+          <div class="rewards-display" id="rewardsDisplay"></div>
+        </div>
+
+        <!-- Eligibility Banner -->
+        <div id="eligibilityBanner" class="eligibility-banner not-eligible" style="display:none"></div>
+
+        <!-- Entry Form -->
+        <div class="modal-form" id="entryForm">
+          <div class="form-group">
+            <label for="amountInput">Billing Amount (₹)</label>
+            <input type="number" id="amountInput" placeholder="e.g. 250" min="100" inputmode="numeric">
+          </div>
+          <div class="modal-form form-row">
+            <div class="form-group">
+              <label for="dateInput">Date (IST)</label>
+              <input type="text" id="dateInput" readonly>
+            </div>
+            <div class="form-group">
+              <label for="timeInput">Time (IST)</label>
+              <input type="text" id="timeInput" readonly>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="messageInput">Message (optional)</label>
+            <textarea id="messageInput" rows="2" placeholder="Any note..."></textarea>
+          </div>
+          <div id="formError" class="error-msg"></div>
+          <div class="modal-actions">
+            <button class="btn btn-primary" id="saveEntryBtn">💾 Save Entry</button>
+            <button class="btn btn-secondary" id="cancelEntryBtn">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Claim Reward Button (shown when eligible) -->
+        <div class="modal-actions" id="claimSection" style="display:none">
+          <button class="btn btn-success" id="claimRewardBtn" style="flex:1">🎁 Claim Reward</button>
+        </div>
+
+        <!-- WhatsApp Button (shown after save) -->
+        <div class="modal-actions" id="whatsappSection" style="display:none">
+          <a class="btn btn-whatsapp" id="whatsappBtn" href="#" target="_blank" rel="noopener" style="flex:1">📱 Send to WhatsApp</a>
+        </div>
+
+        <!-- Past Entries -->
+        <div class="past-entries" id="pastEntries">
+          <button class="show-details-btn" id="showDetailsBtn">📜 Show Past Entry Details</button>
+          <div class="entries-list hidden" id="entriesList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
