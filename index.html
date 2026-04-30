@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Perfect Pizza Point - Customer Loyalty Tracking System. Track visits, reward loyal customers, and manage your pizza shop rewards program.">
+  <meta name="description" content="Perfect Pizza Point - Customer Loyalty Tracking System.">
   <title>Perfect Pizza Point - Loyalty System</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -13,31 +13,8 @@
   <!-- ===== TOAST ===== -->
   <div id="toast" class="toast"></div>
 
-  <!-- ===== LOGIN VIEW ===== -->
-  <div id="loginView">
-    <div class="login-card">
-      <div class="login-logo">🍕</div>
-      <h1 class="login-title">Perfect Pizza Point</h1>
-      <p class="login-subtitle">Loyalty Management System</p>
-      <form id="loginForm" autocomplete="off">
-        <div class="form-group">
-          <label for="loginUser">Username</label>
-          <input type="text" id="loginUser" placeholder="Enter username" required>
-        </div>
-        <div class="form-group">
-          <label for="loginPass">Password</label>
-          <input type="password" id="loginPass" placeholder="Enter password" required>
-        </div>
-        <div id="loginError" class="error-msg"></div>
-        <button type="submit" class="btn btn-primary" id="loginBtn">
-          🔐 Login
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- ===== APP VIEW ===== -->
-  <div id="appView" class="hidden">
+  <!-- ===== APP VIEW (always visible) ===== -->
+  <div id="appView">
     <header class="app-header">
       <div class="app-brand">
         <span class="app-brand-icon">🍕</span>
@@ -46,16 +23,22 @@
       <div class="header-actions">
         <button class="tab-btn active" id="tabEntry" data-tab="entry">📝 Entry</button>
         <button class="tab-btn" id="tabAdmin" data-tab="admin">📊 Admin</button>
-        <button class="logout-btn" id="logoutBtn">Logout</button>
+        <button class="theme-toggle-btn" id="themeToggle" title="Toggle light/dark mode" aria-label="Toggle theme">
+          <span id="themeIcon">☀️</span>
+        </button>
+        <button class="logout-btn hidden" id="logoutBtn">Logout</button>
       </div>
     </header>
 
     <!-- ENTRY TAB -->
     <div id="entrySection" class="entry-view">
-      <h2>Add Customer Entry</h2>
-      <p>Enter the customer's 10-digit mobile number to begin</p>
+      <div class="entry-hero">
+        <div class="entry-hero-icon">🍕</div>
+        <h2>Customer Entry</h2>
+        <p>Enter the customer's 10-digit mobile number to begin</p>
+      </div>
       <div class="mobile-input-wrap">
-        <input type="tel" id="mobileInput" placeholder="9876543210" maxlength="10" inputmode="numeric">
+        <input type="tel" id="mobileInput" placeholder="9876543210" maxlength="10" inputmode="numeric" autocomplete="off">
         <button class="btn btn-primary btn-sm" id="addEntryBtn">Add Entry</button>
       </div>
       <div id="mobileError" class="error-msg"></div>
@@ -83,7 +66,12 @@
 
         <div class="chart-section">
           <h3>🔁 Repeat vs New Customers</h3>
-          <div class="chart-wrap"><canvas id="repeatChart"></canvas></div>
+          <div class="repeat-chart-layout">
+            <div class="repeat-stats-side" id="repeatStatsSide"></div>
+            <div class="repeat-chart-side">
+              <div class="chart-wrap chart-wrap-donut"><canvas id="repeatChart"></canvas></div>
+            </div>
+          </div>
         </div>
 
         <div class="chart-section">
@@ -102,6 +90,55 @@
           <div id="timeBetweenArea"></div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== ADMIN LOGIN MODAL ===== -->
+  <div id="adminLoginModal" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>🔐 Admin Login</h3>
+        <button class="modal-close" id="adminLoginClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:20px">Analytics access requires authentication.</p>
+        <form id="adminLoginForm" autocomplete="off">
+          <div class="form-group">
+            <label for="adminUser">Username</label>
+            <input type="text" id="adminUser" placeholder="Enter username" required>
+          </div>
+          <div class="form-group">
+            <label for="adminPass">Password</label>
+            <input type="password" id="adminPass" placeholder="Enter password" required>
+          </div>
+          <div id="adminLoginError" class="error-msg" style="margin-bottom:12px"></div>
+          <button type="submit" class="btn btn-primary" id="adminLoginBtn">🔐 Login</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== GIFT CLAIM MODAL ===== -->
+  <div id="giftModal" class="modal-overlay hidden">
+    <div class="modal gift-modal-box">
+      <div class="gift-animation-area">
+        <div class="gift-big-icon">🎁</div>
+        <div class="gift-sparkles">
+          <span class="sparkle s1">✨</span>
+          <span class="sparkle s2">⭐</span>
+          <span class="sparkle s3">✨</span>
+          <span class="sparkle s4">⭐</span>
+          <span class="sparkle s5">✨</span>
+        </div>
+      </div>
+      <h2 class="gift-title">Congratulations!</h2>
+      <div class="gift-mobile-label" id="giftMobileDisplay"></div>
+      <p class="gift-desc">You've earned a <strong>FREE meal</strong> worth up to <strong id="giftValueDisplay"></strong>!</p>
+      <div class="gift-actions">
+        <button class="btn btn-success" id="claimGiftBtn" style="width:100%">🎉 Claim Free Meal Now</button>
+        <button class="btn btn-secondary" id="skipGiftBtn" style="width:100%;margin-top:10px">⏭ Skip for Now</button>
+      </div>
+      <div id="giftError" class="error-msg" style="margin-top:10px;text-align:center"></div>
     </div>
   </div>
 
@@ -156,14 +193,9 @@
           </div>
         </div>
 
-        <!-- Claim Reward Button (shown when eligible) -->
-        <div class="modal-actions" id="claimSection" style="display:none">
-          <button class="btn btn-success" id="claimRewardBtn" style="flex:1">🎁 Claim Reward</button>
-        </div>
-
         <!-- WhatsApp Button (shown after save) -->
         <div class="modal-actions" id="whatsappSection" style="display:none">
-          <a class="btn btn-whatsapp" id="whatsappBtn" href="#" target="_blank" rel="noopener" style="flex:1">📱 Send to WhatsApp</a>
+          <a class="btn btn-whatsapp" id="whatsappBtn" href="#" target="_blank" rel="noopener" style="flex:1">📱 Send WhatsApp Message</a>
         </div>
 
         <!-- Past Entries -->
