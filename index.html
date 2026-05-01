@@ -55,7 +55,7 @@
         <div class="stats-grid" id="statsGrid"></div>
 
         <div class="chart-section">
-          <h3>👥 Top Repeat Customers</h3>
+          <h3>👥 Top 10 Customers</h3>
           <div style="overflow-x:auto">
             <table class="top-table" id="topCustomersTable">
               <thead><tr><th>#</th><th>Mobile</th><th>Visits</th></tr></thead>
@@ -121,6 +121,7 @@
   <!-- ===== GIFT CLAIM MODAL ===== -->
   <div id="giftModal" class="modal-overlay hidden">
     <div class="modal gift-modal-box">
+      <button class="modal-close gift-close-btn" id="giftCloseBtn">&times;</button>
       <div class="gift-animation-area">
         <div class="gift-big-icon">🎁</div>
         <div class="gift-sparkles">
@@ -136,7 +137,6 @@
       <p class="gift-desc">You've earned a <strong>FREE meal</strong> worth up to <strong id="giftValueDisplay"></strong>!</p>
       <div class="gift-actions">
         <button class="btn btn-success" id="claimGiftBtn" style="width:100%">🎉 Claim Free Meal Now</button>
-        <button class="btn btn-secondary" id="skipGiftBtn" style="width:100%;margin-top:10px">⏭ Skip for Now</button>
       </div>
       <div id="giftError" class="error-msg" style="margin-top:10px;text-align:center"></div>
     </div>
