@@ -13,7 +13,7 @@
   <!-- ===== TOAST ===== -->
   <div id="toast" class="toast"></div>
 
-  <!-- ===== APP VIEW (always visible) ===== -->
+  <!-- ===== APP VIEW ===== -->
   <div id="appView">
     <header class="app-header">
       <div class="app-brand">
@@ -118,27 +118,32 @@
     </div>
   </div>
 
-  <!-- ===== GIFT CLAIM MODAL ===== -->
+  <!-- ===== GIFT CLAIM MODAL (with close button, no skip) ===== -->
   <div id="giftModal" class="modal-overlay hidden">
-    <div class="modal gift-modal-box" style="position: relative;">
-      <button class="modal-close" id="giftCloseBtn" style="position: absolute; top: 12px; right: 12px; z-index: 10;">&times;</button>
-      <div class="gift-animation-area">
-        <div class="gift-big-icon">🎁</div>
-        <div class="gift-sparkles">
-          <span class="sparkle s1">✨</span>
-          <span class="sparkle s2">⭐</span>
-          <span class="sparkle s3">✨</span>
-          <span class="sparkle s4">⭐</span>
-          <span class="sparkle s5">✨</span>
+    <div class="modal gift-modal-box">
+      <div class="modal-header">
+        <h3>🎉 Reward</h3>
+        <button class="modal-close" id="giftModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="gift-animation-area">
+          <div class="gift-big-icon">🎁</div>
+          <div class="gift-sparkles">
+            <span class="sparkle s1">✨</span>
+            <span class="sparkle s2">⭐</span>
+            <span class="sparkle s3">✨</span>
+            <span class="sparkle s4">⭐</span>
+            <span class="sparkle s5">✨</span>
+          </div>
         </div>
+        <h2 class="gift-title">Congratulations!</h2>
+        <div class="gift-mobile-label" id="giftMobileDisplay"></div>
+        <p class="gift-desc">You've earned a <strong>FREE meal</strong> worth up to <strong id="giftValueDisplay"></strong>!</p>
+        <div class="gift-actions">
+          <button class="btn btn-success" id="claimGiftBtn" style="width:100%">🎉 Claim Free Meal Now</button>
+        </div>
+        <div id="giftError" class="error-msg" style="margin-top:10px;text-align:center"></div>
       </div>
-      <h2 class="gift-title">Congratulations!</h2>
-      <div class="gift-mobile-label" id="giftMobileDisplay"></div>
-      <p class="gift-desc">You've earned a <strong>FREE meal</strong> worth up to <strong id="giftValueDisplay"></strong>!</p>
-      <div class="gift-actions">
-        <button class="btn btn-success" id="claimGiftBtn" style="width:100%">🎉 Claim Free Meal Now</button>
-      </div>
-      <div id="giftError" class="error-msg" style="margin-top:10px;text-align:center"></div>
     </div>
   </div>
 
@@ -152,21 +157,17 @@
       <div class="modal-body">
         <div class="modal-mobile" id="modalMobile"></div>
 
-        <!-- Dot Visualization -->
         <div class="dots-section" id="dotsSection">
           <div class="dots-section-label">Loyalty Progress</div>
         </div>
 
-        <!-- Rewards Display -->
         <div id="rewardsSection" style="display:none">
           <div class="dots-section-label">Rewards Claimed</div>
           <div class="rewards-display" id="rewardsDisplay"></div>
         </div>
 
-        <!-- Eligibility Banner -->
         <div id="eligibilityBanner" class="eligibility-banner not-eligible" style="display:none"></div>
 
-        <!-- Entry Form -->
         <div class="modal-form" id="entryForm">
           <div class="form-group">
             <label for="amountInput">Billing Amount (₹)</label>
@@ -193,12 +194,10 @@
           </div>
         </div>
 
-        <!-- WhatsApp Button (shown after save) -->
         <div class="modal-actions" id="whatsappSection" style="display:none">
           <a class="btn btn-whatsapp" id="whatsappBtn" href="#" target="_blank" rel="noopener" style="flex:1">📱 Send WhatsApp Message</a>
         </div>
 
-        <!-- Past Entries -->
         <div class="past-entries" id="pastEntries">
           <button class="show-details-btn" id="showDetailsBtn">📜 Show Past Entry Details</button>
           <div class="entries-list hidden" id="entriesList"></div>
