@@ -9,7 +9,7 @@ let appConfig = null;
 let currentMobile = "";
 let currentCustomerData = null;
 let adminCharts = {};
-let adminLoggedIn = false;
+let adminLoggedIn = false;  // sessionStorage removed – every admin open requires login
 
 // ===== HELPERS =====
 function getISTNow() {
@@ -81,6 +81,13 @@ function switchTab(tab) {
   document.getElementById(tab === "entry" ? "tabEntry" : "tabAdmin").classList.add("active");
   document.getElementById("entrySection").classList.toggle("hidden", tab !== "entry");
   document.getElementById("adminSection").classList.toggle("hidden", tab !== "admin");
+
+  // ───── Modification #3: Force re‑authentication every time admin tab is opened ─────
+  if (tab === "entry" && adminLoggedIn) {
+    adminLoggedIn = false;
+    document.getElementById("logoutBtn").classList.add("hidden");
+  }
+
   if (tab === "admin" && adminLoggedIn) loadAdminData();
 }
 
@@ -129,7 +136,6 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (e) =
 
   if (result.success) {
     adminLoggedIn = true;
-    
     // Fetch and cache config
     const configResult = await apiCall("getConfig");
     if (configResult.success) appConfig = configResult;
@@ -155,7 +161,6 @@ document.getElementById("logoutBtn").addEventListener("click", () => {
   switchTab("entry");
   showToast("Logged out successfully.");
 });
-
 
 // ===== ADD ENTRY BUTTON =====
 document.getElementById("addEntryBtn").addEventListener("click", async () => {
@@ -183,7 +188,6 @@ document.getElementById("addEntryBtn").addEventListener("click", async () => {
   }
 
   document.getElementById("mobileInput").value = "";
-
   currentMobile = mobile;
   currentCustomerData = result;
 
@@ -210,7 +214,7 @@ document.getElementById("mobileInput").addEventListener("input", (e) => {
   e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
 });
 
-// ===== GIFT MODAL =====
+// ===== GIFT MODAL (Modified: close button replaces skip) =====
 function openGiftModal(data) {
   document.getElementById("giftMobileDisplay").textContent = currentMobile;
   document.getElementById("giftValueDisplay").textContent = "₹" + (data.rewardValue || 150);
@@ -222,6 +226,18 @@ function openGiftModal(data) {
 
   document.getElementById("giftModal").classList.remove("hidden");
 }
+
+// Close button (X) and overlay: proceed to entry modal
+document.getElementById("giftModalClose").addEventListener("click", () => {
+  document.getElementById("giftModal").classList.add("hidden");
+  openCustomerModal(currentCustomerData);
+});
+
+document.getElementById("giftModal").addEventListener("click", (e) => {
+  if (e.target === document.getElementById("giftModal")) {
+    document.getElementById("giftModalClose").click();
+  }
+});
 
 document.getElementById("claimGiftBtn").addEventListener("click", async () => {
   const btn = document.getElementById("claimGiftBtn");
@@ -245,11 +261,6 @@ document.getElementById("claimGiftBtn").addEventListener("click", async () => {
     btn.disabled = false;
     btn.innerHTML = "🎉 Claim Free Meal Now";
   }
-});
-
-document.getElementById("giftCloseBtn").addEventListener("click", () => {
-  document.getElementById("giftModal").classList.add("hidden");
-  openCustomerModal(currentCustomerData);
 });
 
 // ===== CUSTOMER MODAL =====
@@ -379,7 +390,7 @@ document.getElementById("showDetailsBtn").addEventListener("click", () => {
   }
 });
 
-// ===== SAVE ENTRY =====
+// ===== SAVE ENTRY (with optimistic UI – Fix #5) =====
 document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   const amount = document.getElementById("amountInput").value.trim();
   const message = document.getElementById("messageInput").value.trim();
@@ -396,13 +407,21 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Saving...';
 
-  // --- STEP A: Optimistic State ---
+  // Timeout guard
+  const timeoutId = setTimeout(() => {
+    if (btn.disabled) {
+      btn.disabled = false;
+      btn.innerHTML = "💾 Save Entry";
+      errEl.textContent = "Request timed out. Please try again.";
+    }
+  }, 30000);
+
+  // ───── Step A & B: Optimistic UI update ─────
   const optimisticTotal = (currentCustomerData.totalEntries || 0) + 1;
   const optimisticEligible = optimisticTotal % appConfig.cycle === 0;
 
-  // --- STEP B: Optimistic UI Updates ---
+  // Update dots and eligibility banner immediately
   buildDots(optimisticTotal, appConfig.cycle, currentCustomerData.rewardsClaimed);
-  
   const banner = document.getElementById("eligibilityBanner");
   if (optimisticEligible) {
     banner.className = "eligibility-banner eligible";
@@ -414,24 +433,16 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
     banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
   }
 
+  // Hide entry form, show WhatsApp placeholder
   document.getElementById("entryForm").style.display = "none";
-  document.getElementById("whatsappSection").style.display = "";
-  
-  const whatsappBtn = document.getElementById("whatsappBtn");
-  whatsappBtn.href = "#";
-  whatsappBtn.textContent = "Preparing message...";
-  whatsappBtn.style.opacity = "0.5";
+  const whatsappSec = document.getElementById("whatsappSection");
+  whatsappSec.style.display = "";
+  const wabtn = document.getElementById("whatsappBtn");
+  wabtn.href = "#";
+  wabtn.textContent = "Preparing message...";
+  wabtn.style.opacity = "0.5";
 
-  // Timeout guard
-  const timeoutId = setTimeout(() => {
-    if (btn.disabled) {
-      btn.disabled = false;
-      btn.innerHTML = "💾 Save Entry";
-      errEl.textContent = "Request timed out. Please try again.";
-    }
-  }, 30000);
-
-  // --- STEP C: Await API Response ---
+  // ───── Step C: Actual API call ─────
   const result = await apiCall("addEntry", {
     mobile: currentMobile,
     amount: amount,
@@ -441,28 +452,23 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   clearTimeout(timeoutId);
 
   if (result.success) {
-    // Success State Let's Apply
-    whatsappBtn.href = result.whatsappLink;
-    whatsappBtn.textContent = "📱 Send WhatsApp Message";
-    whatsappBtn.style.opacity = "1";
+    // Success: finalise WhatsApp link and update state
+    wabtn.href = result.whatsappLink;
+    wabtn.textContent = "📱 Send WhatsApp Message";
+    wabtn.style.opacity = "1";
     showToast("Entry saved! ✅", "success");
-
-    btn.disabled = false;
-    btn.innerHTML = "💾 Save Entry";
 
     currentCustomerData.totalEntries = result.totalEntries;
     currentCustomerData.eligible = result.eligible;
     currentCustomerData.rewardsClaimed = result.rewardsClaimed;
-
   } else {
-    // Failure State Let's Rollback
+    // Failure: rollback UI to original state
     document.getElementById("entryForm").style.display = "";
-    document.getElementById("whatsappSection").style.display = "none";
-    
+    whatsappSec.style.display = "none";
     buildDots(currentCustomerData.totalEntries, appConfig.cycle, currentCustomerData.rewardsClaimed);
 
-    const origEligible = currentCustomerData.eligible;
-    if (origEligible) {
+    const banner = document.getElementById("eligibilityBanner");
+    if (currentCustomerData.eligible) {
       banner.className = "eligibility-banner eligible";
       banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + appConfig.rewardValue + ")!";
     } else {
@@ -473,13 +479,15 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
     }
 
     errEl.textContent = result.error || "Failed to save entry.";
-    showToast(result.error || "Failed to save entry.", "error");
-
-    btn.disabled = false;
-    btn.innerHTML = "💾 Save Entry";
+    showToast(result.error || "Error saving entry", "error");
   }
+
+  // Always re-enable button
+  btn.disabled = false;
+  btn.innerHTML = "💾 Save Entry";
 });
 
+// Amount input – numeric only
 document.getElementById("amountInput").addEventListener("input", (e) => {
   e.target.value = e.target.value.replace(/[^\d]/g, "");
 });
@@ -595,6 +603,7 @@ function renderTopCustomers(customers) {
 
 function renderRepeatChart(repeat, newC) {
   const total = repeat + newC;
+
   const side = document.getElementById("repeatStatsSide");
   side.innerHTML = "";
 
