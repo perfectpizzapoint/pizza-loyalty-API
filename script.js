@@ -3,7 +3,7 @@
 // ============================================================
 
 // ⚠️ IMPORTANT: Set your deployed Google Apps Script Web App URL here
-const API_URL = "https://script.google.com/macros/s/AKfycbzyyi_faies09WyJOrGJaKxUDCiN33VFVgGuaa9ZP6PlLDrHvMkjR8sX7ffaFomVty3/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzfcThwO6xpJ0FRACtR3toOkl9SToRUnP8kESQ17Y19AQiVmWz6LmHz-WBdn5rUHd3w/exec";
 
 // ===== STATE =====
 let appConfig = null;
@@ -88,13 +88,12 @@ function switchTab(tab) {
 document.getElementById("tabEntry").addEventListener("click", () => switchTab("entry"));
 
 document.getElementById("tabAdmin").addEventListener("click", () => {
-  if (!adminLoggedIn) {
-    // Show admin login modal
-    document.getElementById("adminLoginModal").classList.remove("hidden");
-    document.getElementById("adminUser").focus();
-  } else {
-    switchTab("admin");
-  }
+  // Always require re-authentication when admin panel is accessed
+  document.getElementById("adminLoginModal").classList.remove("hidden");
+  document.getElementById("adminUser").value = "";
+  document.getElementById("adminPass").value = "";
+  document.getElementById("adminLoginError").textContent = "";
+  document.getElementById("adminUser").focus();
 });
 
 // ===== ADMIN LOGIN MODAL =====
@@ -131,7 +130,6 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (e) =
 
   if (result.success) {
     adminLoggedIn = true;
-    sessionStorage.setItem("adminLoggedIn", "true");
 
     // Fetch and cache config
     const configResult = await apiCall("getConfig");
@@ -154,17 +152,12 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (e) =
 // ===== LOGOUT =====
 document.getElementById("logoutBtn").addEventListener("click", () => {
   adminLoggedIn = false;
-  sessionStorage.removeItem("adminLoggedIn");
   document.getElementById("logoutBtn").classList.add("hidden");
   switchTab("entry");
   showToast("Logged out successfully.");
 });
 
-// ===== RESTORE ADMIN SESSION =====
-if (sessionStorage.getItem("adminLoggedIn") === "true") {
-  adminLoggedIn = true;
-  document.getElementById("logoutBtn").classList.remove("hidden");
-}
+// ===== NO SESSION RESTORE — Admin must re-authenticate every time =====
 
 // ===== ADD ENTRY BUTTON =====
 // Single optimized API call (checkMobile + getCustomerData combined)
@@ -266,9 +259,18 @@ document.getElementById("claimGiftBtn").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("skipGiftBtn").addEventListener("click", () => {
+// Close gift modal via X button
+document.getElementById("giftCloseBtn").addEventListener("click", () => {
   document.getElementById("giftModal").classList.add("hidden");
   openCustomerModal(currentCustomerData);
+});
+
+// Close gift modal via overlay click
+document.getElementById("giftModal").addEventListener("click", (e) => {
+  if (e.target === document.getElementById("giftModal")) {
+    document.getElementById("giftModal").classList.add("hidden");
+    openCustomerModal(currentCustomerData);
+  }
 });
 
 // ===== CUSTOMER MODAL =====
@@ -428,6 +430,33 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
     }
   }, 30000);
 
+  // STEP A — Compute optimistic state
+  const optimisticTotal = (currentCustomerData.totalEntries || 0) + 1;
+  const optimisticEligible = optimisticTotal % appConfig.cycle === 0;
+
+  // STEP B — Immediately update the UI (before awaiting API)
+  buildDots(optimisticTotal, appConfig.cycle, currentCustomerData.rewardsClaimed);
+
+  const banner = document.getElementById("eligibilityBanner");
+  if (optimisticEligible) {
+    banner.className = "eligibility-banner eligible";
+    banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + (appConfig.rewardValue || 150) + ")!";
+  } else {
+    banner.className = "eligibility-banner not-eligible";
+    const pos = optimisticTotal % appConfig.cycle;
+    const remaining = pos === 0 ? appConfig.cycle : appConfig.cycle - pos;
+    banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
+  }
+
+  document.getElementById("entryForm").style.display = "none";
+  document.getElementById("whatsappSection").style.display = "";
+
+  const whatsappBtn = document.getElementById("whatsappBtn");
+  whatsappBtn.href = "#";
+  whatsappBtn.textContent = "Preparing message...";
+  whatsappBtn.style.opacity = "0.5";
+
+  // STEP C — Await the API call
   const result = await apiCall("addEntry", {
     mobile: currentMobile,
     amount: amount,
@@ -437,9 +466,9 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   clearTimeout(timeoutId);
 
   if (result.success) {
+    // Success: finalize optimistic UI
     showToast("Entry saved! ✅", "success");
 
-    // ===== POINT 9 FIX: Always reset button state on success =====
     btn.disabled = false;
     btn.innerHTML = "💾 Save Entry";
 
@@ -448,8 +477,7 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
     currentCustomerData.rewardsClaimed = result.rewardsClaimed;
     buildDots(result.totalEntries, result.cycle, result.rewardsClaimed);
 
-    // Update eligibility banner
-    const banner = document.getElementById("eligibilityBanner");
+    // Update eligibility banner with server-confirmed values
     if (result.eligible) {
       banner.className = "eligibility-banner eligible";
       banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + result.rewardValue + ")!";
@@ -460,13 +488,18 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
       banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
     }
 
-    // Hide entry form, show WhatsApp
-    document.getElementById("entryForm").style.display = "none";
-    document.getElementById("whatsappSection").style.display = "";
-    document.getElementById("whatsappBtn").href = result.whatsappLink;
+    // Set real WhatsApp link
+    whatsappBtn.href = result.whatsappLink;
+    whatsappBtn.textContent = "📱 Send WhatsApp Message";
+    whatsappBtn.style.opacity = "1";
 
   } else {
+    // Failure: roll back optimistic UI
+    document.getElementById("entryForm").style.display = "";
+    document.getElementById("whatsappSection").style.display = "none";
+    buildDots(currentCustomerData.totalEntries, appConfig.cycle, currentCustomerData.rewardsClaimed);
     errEl.textContent = result.error || "Failed to save entry.";
+    showToast(result.error || "Failed to save entry.", "error");
     btn.disabled = false;
     btn.innerHTML = "💾 Save Entry";
   }
