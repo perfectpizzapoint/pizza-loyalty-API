@@ -3,7 +3,7 @@
 // ============================================================
 
 // ⚠️ IMPORTANT: Set your deployed Google Apps Script Web App URL here
-const API_URL = "https://script.google.com/macros/s/AKfycbzyyi_faies09WyJOrGJaKxUDCiN33VFVgGuaa9ZP6PlLDrHvMkjR8sX7ffaFomVty3/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzfcThwO6xpJ0FRACtR3toOkl9SToRUnP8kESQ17Y19AQiVmWz6LmHz-WBdn5rUHd3w/exec";
 
 // ===== STATE =====
 let appConfig = null;
@@ -82,6 +82,14 @@ function switchTab(tab) {
   document.getElementById(tab === "entry" ? "tabEntry" : "tabAdmin").classList.add("active");
   document.getElementById("entrySection").classList.toggle("hidden", tab !== "entry");
   document.getElementById("adminSection").classList.toggle("hidden", tab !== "admin");
+
+  // Modification 3: Log out admin whenever they leave the admin panel.
+  // This forces re-authentication every time the admin tab is reopened.
+  if (tab === "entry" && adminLoggedIn) {
+    adminLoggedIn = false;
+    document.getElementById("logoutBtn").classList.add("hidden");
+  }
+
   if (tab === "admin" && adminLoggedIn) loadAdminData();
 }
 
@@ -89,7 +97,8 @@ document.getElementById("tabEntry").addEventListener("click", () => switchTab("e
 
 document.getElementById("tabAdmin").addEventListener("click", () => {
   if (!adminLoggedIn) {
-    // Show admin login modal
+    // Always show login modal — adminLoggedIn is reset on tab switch, so this
+    // triggers every time the admin panel is reopened after leaving it.
     document.getElementById("adminLoginModal").classList.remove("hidden");
     document.getElementById("adminUser").focus();
   } else {
@@ -131,7 +140,6 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (e) =
 
   if (result.success) {
     adminLoggedIn = true;
-    sessionStorage.setItem("adminLoggedIn", "true");
 
     // Fetch and cache config
     const configResult = await apiCall("getConfig");
@@ -154,17 +162,13 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (e) =
 // ===== LOGOUT =====
 document.getElementById("logoutBtn").addEventListener("click", () => {
   adminLoggedIn = false;
-  sessionStorage.removeItem("adminLoggedIn");
   document.getElementById("logoutBtn").classList.add("hidden");
   switchTab("entry");
   showToast("Logged out successfully.");
 });
 
-// ===== RESTORE ADMIN SESSION =====
-if (sessionStorage.getItem("adminLoggedIn") === "true") {
-  adminLoggedIn = true;
-  document.getElementById("logoutBtn").classList.remove("hidden");
-}
+// NOTE: sessionStorage-based admin session restore intentionally removed.
+// Admin must re-authenticate every time the admin panel is accessed.
 
 // ===== ADD ENTRY BUTTON =====
 // Single optimized API call (checkMobile + getCustomerData combined)
@@ -205,7 +209,6 @@ document.getElementById("addEntryBtn").addEventListener("click", async () => {
   appConfig.rewardValue = result.rewardValue;
   appConfig.minAmount = result.minAmount;
 
-  // ===== POINT 8: Gift popup for eligible customers =====
   if (result.eligible) {
     openGiftModal(result);
   } else {
@@ -266,7 +269,9 @@ document.getElementById("claimGiftBtn").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("skipGiftBtn").addEventListener("click", () => {
+// Modification 1 & 2: "Skip for Now" button removed; replaced by X close button on gift modal.
+// The X button (id="giftModalClose") is in index.html and behaves like skip did.
+document.getElementById("giftModalClose").addEventListener("click", () => {
   document.getElementById("giftModal").classList.add("hidden");
   openCustomerModal(currentCustomerData);
 });
@@ -298,7 +303,7 @@ function openCustomerModal(data) {
     rewardsSection.style.display = "none";
   }
 
-  // Eligibility (post-claim eligible state means save is still allowed)
+  // Eligibility banner
   const banner = document.getElementById("eligibilityBanner");
   const saveBtn = document.getElementById("saveEntryBtn");
 
@@ -428,6 +433,32 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
     }
   }, 30000);
 
+  // Fix 5 — STEP A: Compute optimistic state before awaiting anything
+  const optimisticTotal = (currentCustomerData.totalEntries || 0) + 1;
+  const optimisticEligible = optimisticTotal % appConfig.cycle === 0;
+
+  // Fix 5 — STEP B: Update UI immediately (optimistic) — no await needed
+  buildDots(optimisticTotal, appConfig.cycle, currentCustomerData.rewardsClaimed);
+
+  const banner = document.getElementById("eligibilityBanner");
+  if (optimisticEligible) {
+    banner.className = "eligibility-banner eligible";
+    banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + (appConfig.rewardValue || 150) + ")!";
+  } else {
+    banner.className = "eligibility-banner not-eligible";
+    const pos = optimisticTotal % appConfig.cycle;
+    const remaining = pos === 0 ? appConfig.cycle : appConfig.cycle - pos;
+    banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
+  }
+
+  document.getElementById("entryForm").style.display = "none";
+  document.getElementById("whatsappSection").style.display = "";
+  const whatsappBtn = document.getElementById("whatsappBtn");
+  whatsappBtn.href = "#";
+  whatsappBtn.textContent = "Preparing message...";
+  whatsappBtn.style.opacity = "0.5";
+
+  // Fix 5 — STEP C: Await the actual API call
   const result = await apiCall("addEntry", {
     mobile: currentMobile,
     amount: amount,
@@ -437,19 +468,19 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   clearTimeout(timeoutId);
 
   if (result.success) {
+    // Success: confirm with real server data
     showToast("Entry saved! ✅", "success");
-
-    // ===== POINT 9 FIX: Always reset button state on success =====
     btn.disabled = false;
     btn.innerHTML = "💾 Save Entry";
 
     currentCustomerData.totalEntries = result.totalEntries;
     currentCustomerData.eligible = result.eligible;
     currentCustomerData.rewardsClaimed = result.rewardsClaimed;
+
+    // Rebuild dots with confirmed server values
     buildDots(result.totalEntries, result.cycle, result.rewardsClaimed);
 
-    // Update eligibility banner
-    const banner = document.getElementById("eligibilityBanner");
+    // Update banner with confirmed server values
     if (result.eligible) {
       banner.className = "eligibility-banner eligible";
       banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + result.rewardValue + ")!";
@@ -460,13 +491,28 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
       banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
     }
 
-    // Hide entry form, show WhatsApp
-    document.getElementById("entryForm").style.display = "none";
-    document.getElementById("whatsappSection").style.display = "";
-    document.getElementById("whatsappBtn").href = result.whatsappLink;
-
+    whatsappBtn.href = result.whatsappLink;
+    whatsappBtn.textContent = "📱 Send WhatsApp Message";
+    whatsappBtn.style.opacity = "1";
   } else {
+    // Failure: rollback the optimistic UI
+    document.getElementById("entryForm").style.display = "";
+    document.getElementById("whatsappSection").style.display = "none";
+    buildDots(currentCustomerData.totalEntries, appConfig.cycle, currentCustomerData.rewardsClaimed);
+
+    // Restore banner to pre-save state
+    if (currentCustomerData.eligible) {
+      banner.className = "eligibility-banner eligible";
+      banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + (appConfig.rewardValue || 150) + ")!";
+    } else {
+      banner.className = "eligibility-banner not-eligible";
+      const pos = currentCustomerData.totalEntries % appConfig.cycle;
+      const remaining = pos === 0 ? appConfig.cycle : appConfig.cycle - pos;
+      banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
+    }
+
     errEl.textContent = result.error || "Failed to save entry.";
+    showToast(result.error || "Failed to save entry.", "error");
     btn.disabled = false;
     btn.innerHTML = "💾 Save Entry";
   }
@@ -574,6 +620,7 @@ function renderAdminStats(data) {
   });
 }
 
+// Modification 4: Display only top 10 customers (backend already sends ≤10; guard here too)
 function renderTopCustomers(customers) {
   const tbody = document.querySelector("#topCustomersTable tbody");
   tbody.innerHTML = "";
@@ -581,18 +628,17 @@ function renderTopCustomers(customers) {
     tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);text-align:center;padding:20px">No data yet</td></tr>';
     return;
   }
-  customers.forEach((c, i) => {
+  customers.slice(0, 10).forEach((c, i) => {
     const tr = document.createElement("tr");
     tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + c.mobile + '</td><td>' + c.count + '</td>';
     tbody.appendChild(tr);
   });
 }
 
-// ===== POINT 6: Revamped Repeat vs New chart =====
+// ===== Repeat vs New chart =====
 function renderRepeatChart(repeat, newC) {
   const total = repeat + newC;
 
-  // Populate the stats side
   const side = document.getElementById("repeatStatsSide");
   side.innerHTML = "";
 
@@ -612,7 +658,6 @@ function renderRepeatChart(repeat, newC) {
     side.appendChild(card);
   });
 
-  // Draw chart
   const ctx = document.getElementById("repeatChart").getContext("2d");
   if (adminCharts.repeat) adminCharts.repeat.destroy();
 
@@ -756,7 +801,6 @@ document.getElementById("calcVisitsBtn").addEventListener("click", async () => {
   renderTimeBetween(result);
 });
 
-// ===== POINT 6: Revamped Time Between Visits =====
 function renderTimeBetween(data) {
   const area = document.getElementById("timeBetweenArea");
   area.innerHTML = "";
