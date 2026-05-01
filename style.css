@@ -422,6 +422,18 @@ body::before {
 
 .gift-actions { padding: 0 4px 16px; }
 
+/* Gift modal close (X) button */
+.gift-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+}
+
+.gift-modal-box {
+  position: relative;
+}
+
 /* ===== POPUP / MODAL ===== */
 .modal-overlay {
   position: fixed;
