@@ -2,7 +2,7 @@
 // Perfect Pizza Point - Frontend Logic
 // ============================================================
 
-const API_URL = "https://script.google.com/macros/s/AKfycbzfcThwO6xpJ0FRACtR3toOkl9SToRUnP8kESQ17Y19AQiVmWz6LmHz-WBdn5rUHd3w/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzyyi_faies09WyJOrGJaKxUDCiN33VFVgGuaa9ZP6PlLDrHvMkjR8sX7ffaFomVty3/exec";
 
 // ===== STATE =====
 let appConfig = null;
