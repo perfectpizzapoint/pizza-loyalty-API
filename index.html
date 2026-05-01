@@ -119,8 +119,12 @@
   </div>
 
   <!-- ===== GIFT CLAIM MODAL ===== -->
+  <!-- Modification 1: "Skip for Now" button removed -->
+  <!-- Modification 2: X close button added at top-right of gift modal box -->
   <div id="giftModal" class="modal-overlay hidden">
-    <div class="modal gift-modal-box">
+    <div class="modal gift-modal-box" style="position:relative">
+      <!-- X close button — same .modal-close style used by other modals -->
+      <button class="modal-close" id="giftModalClose" style="position:absolute;top:14px;right:16px;z-index:1" aria-label="Close">&times;</button>
       <div class="gift-animation-area">
         <div class="gift-big-icon">🎁</div>
         <div class="gift-sparkles">
@@ -136,7 +140,7 @@
       <p class="gift-desc">You've earned a <strong>FREE meal</strong> worth up to <strong id="giftValueDisplay"></strong>!</p>
       <div class="gift-actions">
         <button class="btn btn-success" id="claimGiftBtn" style="width:100%">🎉 Claim Free Meal Now</button>
-        <button class="btn btn-secondary" id="skipGiftBtn" style="width:100%;margin-top:10px">⏭ Skip for Now</button>
+        <!-- "Skip for Now" button intentionally removed -->
       </div>
       <div id="giftError" class="error-msg" style="margin-top:10px;text-align:center"></div>
     </div>
