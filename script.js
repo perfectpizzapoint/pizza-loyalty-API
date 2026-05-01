@@ -2,8 +2,7 @@
 // Perfect Pizza Point - Frontend Logic
 // ============================================================
 
-// ⚠️ IMPORTANT: Set your deployed Google Apps Script Web App URL here
-const API_URL = "https://script.google.com/macros/s/AKfycbzyyi_faies09WyJOrGJaKxUDCiN33VFVgGuaa9ZP6PlLDrHvMkjR8sX7ffaFomVty3/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzfcThwO6xpJ0FRACtR3toOkl9SToRUnP8kESQ17Y19AQiVmWz6LmHz-WBdn5rUHd3w/exec";
 
 // ===== STATE =====
 let appConfig = null;
@@ -88,12 +87,12 @@ function switchTab(tab) {
 document.getElementById("tabEntry").addEventListener("click", () => switchTab("entry"));
 
 document.getElementById("tabAdmin").addEventListener("click", () => {
-  // Always require re-authentication when admin panel is accessed
-  document.getElementById("adminLoginModal").classList.remove("hidden");
-  document.getElementById("adminUser").value = "";
-  document.getElementById("adminPass").value = "";
-  document.getElementById("adminLoginError").textContent = "";
-  document.getElementById("adminUser").focus();
+  if (!adminLoggedIn) {
+    document.getElementById("adminLoginModal").classList.remove("hidden");
+    document.getElementById("adminUser").focus();
+  } else {
+    switchTab("admin");
+  }
 });
 
 // ===== ADMIN LOGIN MODAL =====
@@ -130,7 +129,7 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (e) =
 
   if (result.success) {
     adminLoggedIn = true;
-
+    
     // Fetch and cache config
     const configResult = await apiCall("getConfig");
     if (configResult.success) appConfig = configResult;
@@ -157,10 +156,8 @@ document.getElementById("logoutBtn").addEventListener("click", () => {
   showToast("Logged out successfully.");
 });
 
-// ===== NO SESSION RESTORE — Admin must re-authenticate every time =====
 
 // ===== ADD ENTRY BUTTON =====
-// Single optimized API call (checkMobile + getCustomerData combined)
 document.getElementById("addEntryBtn").addEventListener("click", async () => {
   const mobile = document.getElementById("mobileInput").value.trim();
   const errEl = document.getElementById("mobileError");
@@ -175,7 +172,6 @@ document.getElementById("addEntryBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
 
-  // Single combined API call — replaces two sequential calls for speed
   const result = await apiCall("openCustomer", { mobile });
 
   btn.disabled = false;
@@ -186,19 +182,16 @@ document.getElementById("addEntryBtn").addEventListener("click", async () => {
     return;
   }
 
-  // Clear mobile input for next entry
   document.getElementById("mobileInput").value = "";
 
   currentMobile = mobile;
   currentCustomerData = result;
 
-  // Cache config from response
   appConfig = appConfig || {};
   appConfig.cycle = result.cycle;
   appConfig.rewardValue = result.rewardValue;
   appConfig.minAmount = result.minAmount;
 
-  // ===== POINT 8: Gift popup for eligible customers =====
   if (result.eligible) {
     openGiftModal(result);
   } else {
@@ -206,7 +199,6 @@ document.getElementById("addEntryBtn").addEventListener("click", async () => {
   }
 });
 
-// Enter key on mobile input
 document.getElementById("mobileInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
@@ -214,7 +206,6 @@ document.getElementById("mobileInput").addEventListener("keydown", (e) => {
   }
 });
 
-// Only numeric input
 document.getElementById("mobileInput").addEventListener("input", (e) => {
   e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
 });
@@ -243,14 +234,11 @@ document.getElementById("claimGiftBtn").addEventListener("click", async () => {
   if (result.success) {
     showToast("Reward claimed! 🎁🎉", "success");
 
-    // Update customer data with claimed state
     currentCustomerData.rewardsClaimed = result.rewardsClaimed;
     currentCustomerData.eligible = result.eligible;
     currentCustomerData.totalEntries = result.totalEntries;
 
     document.getElementById("giftModal").classList.add("hidden");
-
-    // Open normal entry modal so they can log today's visit
     openCustomerModal(currentCustomerData);
   } else {
     document.getElementById("giftError").textContent = result.error || "Failed to claim reward.";
@@ -259,18 +247,9 @@ document.getElementById("claimGiftBtn").addEventListener("click", async () => {
   }
 });
 
-// Close gift modal via X button
 document.getElementById("giftCloseBtn").addEventListener("click", () => {
   document.getElementById("giftModal").classList.add("hidden");
   openCustomerModal(currentCustomerData);
-});
-
-// Close gift modal via overlay click
-document.getElementById("giftModal").addEventListener("click", (e) => {
-  if (e.target === document.getElementById("giftModal")) {
-    document.getElementById("giftModal").classList.add("hidden");
-    openCustomerModal(currentCustomerData);
-  }
 });
 
 // ===== CUSTOMER MODAL =====
@@ -280,10 +259,8 @@ function openCustomerModal(data) {
 
   document.getElementById("modalMobile").textContent = currentMobile;
 
-  // Build dot visualization
   buildDots(data.totalEntries, data.cycle, data.rewardsClaimed);
 
-  // Rewards emojis
   const rewardsSection = document.getElementById("rewardsSection");
   const rewardsDisplay = document.getElementById("rewardsDisplay");
   if (data.rewardsClaimed > 0) {
@@ -300,7 +277,6 @@ function openCustomerModal(data) {
     rewardsSection.style.display = "none";
   }
 
-  // Eligibility (post-claim eligible state means save is still allowed)
   const banner = document.getElementById("eligibilityBanner");
   const saveBtn = document.getElementById("saveEntryBtn");
 
@@ -319,7 +295,6 @@ function openCustomerModal(data) {
     saveBtn.title = "";
   }
 
-  // Reset form
   document.getElementById("dateInput").value = getISTDate();
   document.getElementById("timeInput").value = getISTTime();
   document.getElementById("amountInput").value = "";
@@ -421,26 +396,17 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Saving...';
 
-  // Timeout guard: re-enable after 30s if stuck
-  const timeoutId = setTimeout(() => {
-    if (btn.disabled) {
-      btn.disabled = false;
-      btn.innerHTML = "💾 Save Entry";
-      errEl.textContent = "Request timed out. Please try again.";
-    }
-  }, 30000);
-
-  // STEP A — Compute optimistic state
+  // --- STEP A: Optimistic State ---
   const optimisticTotal = (currentCustomerData.totalEntries || 0) + 1;
   const optimisticEligible = optimisticTotal % appConfig.cycle === 0;
 
-  // STEP B — Immediately update the UI (before awaiting API)
+  // --- STEP B: Optimistic UI Updates ---
   buildDots(optimisticTotal, appConfig.cycle, currentCustomerData.rewardsClaimed);
-
+  
   const banner = document.getElementById("eligibilityBanner");
   if (optimisticEligible) {
     banner.className = "eligibility-banner eligible";
-    banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + (appConfig.rewardValue || 150) + ")!";
+    banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + appConfig.rewardValue + ")!";
   } else {
     banner.className = "eligibility-banner not-eligible";
     const pos = optimisticTotal % appConfig.cycle;
@@ -450,13 +416,22 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
 
   document.getElementById("entryForm").style.display = "none";
   document.getElementById("whatsappSection").style.display = "";
-
+  
   const whatsappBtn = document.getElementById("whatsappBtn");
   whatsappBtn.href = "#";
   whatsappBtn.textContent = "Preparing message...";
   whatsappBtn.style.opacity = "0.5";
 
-  // STEP C — Await the API call
+  // Timeout guard
+  const timeoutId = setTimeout(() => {
+    if (btn.disabled) {
+      btn.disabled = false;
+      btn.innerHTML = "💾 Save Entry";
+      errEl.textContent = "Request timed out. Please try again.";
+    }
+  }, 30000);
+
+  // --- STEP C: Await API Response ---
   const result = await apiCall("addEntry", {
     mobile: currentMobile,
     amount: amount,
@@ -466,7 +441,10 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
   clearTimeout(timeoutId);
 
   if (result.success) {
-    // Success: finalize optimistic UI
+    // Success State Let's Apply
+    whatsappBtn.href = result.whatsappLink;
+    whatsappBtn.textContent = "📱 Send WhatsApp Message";
+    whatsappBtn.style.opacity = "1";
     showToast("Entry saved! ✅", "success");
 
     btn.disabled = false;
@@ -475,37 +453,33 @@ document.getElementById("saveEntryBtn").addEventListener("click", async () => {
     currentCustomerData.totalEntries = result.totalEntries;
     currentCustomerData.eligible = result.eligible;
     currentCustomerData.rewardsClaimed = result.rewardsClaimed;
-    buildDots(result.totalEntries, result.cycle, result.rewardsClaimed);
 
-    // Update eligibility banner with server-confirmed values
-    if (result.eligible) {
+  } else {
+    // Failure State Let's Rollback
+    document.getElementById("entryForm").style.display = "";
+    document.getElementById("whatsappSection").style.display = "none";
+    
+    buildDots(currentCustomerData.totalEntries, appConfig.cycle, currentCustomerData.rewardsClaimed);
+
+    const origEligible = currentCustomerData.eligible;
+    if (origEligible) {
       banner.className = "eligibility-banner eligible";
-      banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + result.rewardValue + ")!";
+      banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + appConfig.rewardValue + ")!";
     } else {
       banner.className = "eligibility-banner not-eligible";
-      const pos = result.totalEntries % result.cycle;
-      const remaining = pos === 0 ? result.cycle : result.cycle - pos;
+      const pos = currentCustomerData.totalEntries % appConfig.cycle;
+      const remaining = pos === 0 ? appConfig.cycle : appConfig.cycle - pos;
       banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
     }
 
-    // Set real WhatsApp link
-    whatsappBtn.href = result.whatsappLink;
-    whatsappBtn.textContent = "📱 Send WhatsApp Message";
-    whatsappBtn.style.opacity = "1";
-
-  } else {
-    // Failure: roll back optimistic UI
-    document.getElementById("entryForm").style.display = "";
-    document.getElementById("whatsappSection").style.display = "none";
-    buildDots(currentCustomerData.totalEntries, appConfig.cycle, currentCustomerData.rewardsClaimed);
     errEl.textContent = result.error || "Failed to save entry.";
     showToast(result.error || "Failed to save entry.", "error");
+
     btn.disabled = false;
     btn.innerHTML = "💾 Save Entry";
   }
 });
 
-// Amount input — only numeric
 document.getElementById("amountInput").addEventListener("input", (e) => {
   e.target.value = e.target.value.replace(/[^\d]/g, "");
 });
@@ -515,7 +489,6 @@ function closeModal() {
   document.getElementById("customerModal").classList.add("hidden");
   currentMobile = "";
   currentCustomerData = null;
-  // Re-focus mobile input for quick next entry
   setTimeout(() => document.getElementById("mobileInput").focus(), 100);
 }
 
@@ -587,7 +560,6 @@ function renderAdminStats(data) {
     grid.appendChild(card);
   });
 
-  // Today's toggle handlers
   grid.querySelectorAll('.stat-card .toggle-btn').forEach(btn => {
     btn.addEventListener("click", (e) => {
       const card = e.target.closest('.stat-card');
@@ -621,11 +593,8 @@ function renderTopCustomers(customers) {
   });
 }
 
-// ===== POINT 6: Revamped Repeat vs New chart =====
 function renderRepeatChart(repeat, newC) {
   const total = repeat + newC;
-
-  // Populate the stats side
   const side = document.getElementById("repeatStatsSide");
   side.innerHTML = "";
 
@@ -645,7 +614,6 @@ function renderRepeatChart(repeat, newC) {
     side.appendChild(card);
   });
 
-  // Draw chart
   const ctx = document.getElementById("repeatChart").getContext("2d");
   if (adminCharts.repeat) adminCharts.repeat.destroy();
 
@@ -789,7 +757,6 @@ document.getElementById("calcVisitsBtn").addEventListener("click", async () => {
   renderTimeBetween(result);
 });
 
-// ===== POINT 6: Revamped Time Between Visits =====
 function renderTimeBetween(data) {
   const area = document.getElementById("timeBetweenArea");
   area.innerHTML = "";
