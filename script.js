@@ -146,9 +146,6 @@ async function handleAddEntry() {
       return;
     }
 
-    // Clear mobile input so a new number can be entered immediately
-    document.getElementById('inputMobile').value = '';
-
     // Show entry form
     openEntryForm(mobile, cust);
 
@@ -594,7 +591,7 @@ function renderTopCustomers(list) {
     '<li>' +
     '<div style="display:flex;align-items:center;">' +
     '<span class="top-list__rank">' + (i + 1) + '</span>' +
-    '<span>' + c.mobile + '</span>' +
+    '<span>' + maskMobile(c.mobile) + '</span>' +
     '</div>' +
     '<span style="font-weight:700;color:var(--brand-primary);">' + c.entries + ' visits</span>' +
     '</li>'
