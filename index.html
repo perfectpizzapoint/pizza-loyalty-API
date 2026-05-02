@@ -156,8 +156,8 @@
     <div class="chart-card">
       <div class="chart-card__title">📅 Today's Summary</div>
       <div class="toggle-row" id="todayToggle">
-        <button class="toggle-btn active" onclick="setTodayView('entries', event)">Entries</button>
-        <button class="toggle-btn" onclick="setTodayView('amount', event)">Amount</button>
+        <button class="toggle-btn active" onclick="setTodayView('entries', this)">Entries</button>
+        <button class="toggle-btn" onclick="setTodayView('amount', this)">Amount</button>
       </div>
       <div id="todayValue" style="font-size:1.8rem;font-weight:800;color:var(--brand-primary);"></div>
     </div>
@@ -181,8 +181,8 @@
     <div class="chart-card">
       <div class="chart-card__title">🔥 Day-Hour Heatmap</div>
       <div class="toggle-row" id="heatmapToggle">
-        <button class="toggle-btn active" onclick="setHeatmapType('entries', event)">Entries</button>
-        <button class="toggle-btn" onclick="setHeatmapType('amount', event)">Amount</button>
+        <button class="toggle-btn active" onclick="setHeatmapType('entries', this)">Entries</button>
+        <button class="toggle-btn" onclick="setHeatmapType('amount', this)">Amount</button>
       </div>
       <button class="btn btn--outline btn--sm mb-1" id="btnCalcHeatmap" onclick="calculateHeatmap()">🔄 Calculate Heatmap</button>
       <div id="heatmapContainer"></div>
