@@ -1,850 +1,718 @@
-// ============================================================
-// Perfect Pizza Point - Frontend Logic
-// ============================================================
+/* ═══════════════════════════════════════════
+   Perfect Pizza Point – Loyalty System
+   Single JS file (Entry + Admin logic)
+   ═══════════════════════════════════════════ */
 
-const API_URL = "https://script.google.com/macros/s/AKfycbzyyi_faies09WyJOrGJaKxUDCiN33VFVgGuaa9ZP6PlLDrHvMkjR8sX7ffaFomVty3/exec";
+// ──── CONFIGURATION ────
+// ⚠️  PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE:
+const API_URL = 'https://script.google.com/macros/s/AKfycby2RXrQOKkXQ3dgWRz_hCJMl9Fi9ZFxjm_hD6vuwCdh6KHPbRxCXfMsmKeK6JE1LunG-Q/exec';
 
-// ===== STATE =====
-let appConfig = null;
-let currentMobile = "";
-let currentCustomerData = null;
-let adminCharts = {};
-let adminLoggedIn = false;  // sessionStorage removed – every admin open requires login
+// Runtime cache
+let APP_CONFIG = null;       // { minAmount, cycle, rewardValue }
+let CURRENT_CUSTOMER = null; // customer data from Sheet1
+let LAST_ENTRY_RESULT = null;
+let ADMIN_DATA = null;
+let ADMIN_AUTHENTICATED = false;
 
-// ===== HELPERS =====
-function getISTNow() {
-  const now = new Date();
-  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-  return ist;
+// ──── HELPERS ────
+
+/** IST now (UTC +5:30) */
+function istNow() {
+  const utc = new Date();
+  return new Date(utc.getTime() + (5.5 * 60 * 60 * 1000));
 }
 
-function getISTDate() {
-  const ist = getISTNow();
-  return ist.getUTCFullYear() + '-' +
-    String(ist.getUTCMonth() + 1).padStart(2, '0') + '-' +
-    String(ist.getUTCDate()).padStart(2, '0');
+function istDateStr() {
+  const d = istNow();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
 }
 
-function getISTTime() {
-  const ist = getISTNow();
-  return String(ist.getUTCHours()).padStart(2, '0') + ':' +
-    String(ist.getUTCMinutes()).padStart(2, '0') + ':' +
-    String(ist.getUTCSeconds()).padStart(2, '0');
+function istTimeStr() {
+  const d = istNow();
+  return String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0') + ':' +
+    String(d.getSeconds()).padStart(2, '0');
 }
 
-function showToast(message, type = "") {
-  const toast = document.getElementById("toast");
-  toast.textContent = message;
-  toast.className = "toast" + (type ? " " + type : "");
-  requestAnimationFrame(() => toast.classList.add("show"));
-  setTimeout(() => toast.classList.remove("show"), 3200);
+/** API call helper */
+async function api(params) {
+  const qs = new URLSearchParams(params).toString();
+  const url = API_URL + '?' + qs;
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok) throw new Error('Network error');
+  return res.json();
 }
 
-async function apiCall(action, params = {}) {
-  const url = new URL(API_URL);
-  url.searchParams.set("action", action);
-  for (const key in params) {
-    url.searchParams.set(key, params[key]);
-  }
-  try {
-    const resp = await fetch(url.toString());
-    const data = await resp.json();
-    return data;
-  } catch (err) {
-    return { success: false, error: "Network error: " + err.message };
-  }
+/** Toast */
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast toast--' + type;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
 }
 
-// ===== THEME TOGGLE =====
+/** Show / hide helpers */
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+function showErr(id) { document.getElementById(id).classList.add('visible'); }
+function hideErr(id) { document.getElementById(id).classList.remove('visible'); }
+
+// ──── THEME TOGGLE ────
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  document.getElementById('themeToggle').textContent = isDark ? '🌙' : '☀️';
+  localStorage.setItem('ppp_theme', isDark ? 'light' : 'dark');
+}
+
 (function initTheme() {
-  const saved = localStorage.getItem("ppp_theme") || "dark";
-  document.documentElement.setAttribute("data-theme", saved);
-  updateThemeIcon(saved);
+  const saved = localStorage.getItem('ppp_theme');
+  if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.getElementById('themeToggle').textContent = '☀️';
+  }
 })();
 
-function updateThemeIcon(theme) {
-  const icon = document.getElementById("themeIcon");
-  if (icon) icon.textContent = theme === "dark" ? "☀️" : "🌙";
+// ──── SECTION NAV ────
+function showSection(name) {
+  document.getElementById('sectionHome').classList.remove('active');
+  document.getElementById('sectionAdmin').classList.remove('active');
+  document.getElementById('navHome').classList.remove('active');
+  document.getElementById('navAdmin').classList.remove('active');
+
+  if (name === 'admin') {
+    document.getElementById('sectionAdmin').classList.add('active');
+    document.getElementById('navAdmin').classList.add('active');
+    // Always require re-auth when opening admin
+    ADMIN_AUTHENTICATED = false;
+    show('adminLoginWrap');
+    hide('adminDashboard');
+    document.getElementById('adminUser').value = '';
+    document.getElementById('adminPass').value = '';
+    hideErr('errLogin');
+  } else {
+    document.getElementById('sectionHome').classList.add('active');
+    document.getElementById('navHome').classList.add('active');
+  }
 }
 
-document.getElementById("themeToggle").addEventListener("click", () => {
-  const current = document.documentElement.getAttribute("data-theme") || "dark";
-  const next = current === "dark" ? "light" : "dark";
-  document.documentElement.setAttribute("data-theme", next);
-  localStorage.setItem("ppp_theme", next);
-  updateThemeIcon(next);
-});
-
-// ===== TABS =====
-function switchTab(tab) {
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-  document.getElementById(tab === "entry" ? "tabEntry" : "tabAdmin").classList.add("active");
-  document.getElementById("entrySection").classList.toggle("hidden", tab !== "entry");
-  document.getElementById("adminSection").classList.toggle("hidden", tab !== "admin");
-
-  // ───── Modification #3: Force re‑authentication every time admin tab is opened ─────
-  if (tab === "entry" && adminLoggedIn) {
-    adminLoggedIn = false;
-    document.getElementById("logoutBtn").classList.add("hidden");
+// ──── FETCH CONFIG ON LOAD ────
+async function loadConfig() {
+  try {
+    APP_CONFIG = await api({ action: 'getConfig' });
+    document.getElementById('minAmtLabel').textContent = APP_CONFIG.minAmount;
+  } catch (e) {
+    console.error('Config load failed', e);
   }
-
-  if (tab === "admin" && adminLoggedIn) loadAdminData();
 }
+loadConfig();
 
-document.getElementById("tabEntry").addEventListener("click", () => switchTab("entry"));
+// ══════════════════════════════════════
+//  HOME – CUSTOMER ENTRY SYSTEM
+// ══════════════════════════════════════
 
-document.getElementById("tabAdmin").addEventListener("click", () => {
-  if (!adminLoggedIn) {
-    document.getElementById("adminLoginModal").classList.remove("hidden");
-    document.getElementById("adminUser").focus();
-  } else {
-    switchTab("admin");
-  }
-});
-
-// ===== ADMIN LOGIN MODAL =====
-document.getElementById("adminLoginClose").addEventListener("click", () => {
-  document.getElementById("adminLoginModal").classList.add("hidden");
-  document.getElementById("adminLoginError").textContent = "";
-  document.getElementById("adminUser").value = "";
-  document.getElementById("adminPass").value = "";
-});
-
-document.getElementById("adminLoginModal").addEventListener("click", (e) => {
-  if (e.target === document.getElementById("adminLoginModal")) {
-    document.getElementById("adminLoginClose").click();
-  }
-});
-
-document.getElementById("adminLoginForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const user = document.getElementById("adminUser").value.trim();
-  const pass = document.getElementById("adminPass").value.trim();
-  const errEl = document.getElementById("adminLoginError");
-  const btn = document.getElementById("adminLoginBtn");
-
-  if (!user || !pass) {
-    errEl.textContent = "Please fill in both fields.";
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Verifying...';
-  errEl.textContent = "";
-
-  const result = await apiCall("login", { username: user, password: pass });
-
-  if (result.success) {
-    adminLoggedIn = true;
-    // Fetch and cache config
-    const configResult = await apiCall("getConfig");
-    if (configResult.success) appConfig = configResult;
-
-    document.getElementById("adminLoginModal").classList.add("hidden");
-    document.getElementById("logoutBtn").classList.remove("hidden");
-    document.getElementById("adminUser").value = "";
-    document.getElementById("adminPass").value = "";
-    switchTab("admin");
-    showToast("Admin access granted 🔓", "success");
-  } else {
-    errEl.textContent = result.error || "Login failed.";
-  }
-
-  btn.disabled = false;
-  btn.innerHTML = "🔐 Login";
-});
-
-// ===== LOGOUT =====
-document.getElementById("logoutBtn").addEventListener("click", () => {
-  adminLoggedIn = false;
-  document.getElementById("logoutBtn").classList.add("hidden");
-  switchTab("entry");
-  showToast("Logged out successfully.");
-});
-
-// ===== ADD ENTRY BUTTON =====
-document.getElementById("addEntryBtn").addEventListener("click", async () => {
-  const mobile = document.getElementById("mobileInput").value.trim();
-  const errEl = document.getElementById("mobileError");
-  errEl.textContent = "";
+async function handleAddEntry() {
+  const mobile = document.getElementById('inputMobile').value.trim();
+  hideErr('errMobile');
 
   if (!/^\d{10}$/.test(mobile)) {
-    errEl.textContent = "Please enter exactly 10 digits.";
+    showErr('errMobile');
+    document.getElementById('inputMobile').classList.add('error');
     return;
   }
+  document.getElementById('inputMobile').classList.remove('error');
 
-  const btn = document.getElementById("addEntryBtn");
+  // Disable button while loading
+  const btn = document.getElementById('btnAddEntry');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>';
+  btn.innerHTML = '<span class="spinner"></span> Checking…';
 
-  const result = await apiCall("openCustomer", { mobile });
+  try {
+    // Fetch Sheet1 data only
+    const cust = await api({ action: 'getCustomer', mobile });
+    CURRENT_CUSTOMER = cust;
 
-  btn.disabled = false;
-  btn.innerHTML = "Add Entry";
-
-  if (!result.success) {
-    errEl.textContent = result.error || "Error loading customer data.";
-    return;
-  }
-
-  document.getElementById("mobileInput").value = "";
-  currentMobile = mobile;
-  currentCustomerData = result;
-
-  appConfig = appConfig || {};
-  appConfig.cycle = result.cycle;
-  appConfig.rewardValue = result.rewardValue;
-  appConfig.minAmount = result.minAmount;
-
-  if (result.eligible) {
-    openGiftModal(result);
-  } else {
-    openCustomerModal(result);
-  }
-});
-
-document.getElementById("mobileInput").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    document.getElementById("addEntryBtn").click();
-  }
-});
-
-document.getElementById("mobileInput").addEventListener("input", (e) => {
-  e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
-});
-
-// ===== GIFT MODAL (Modified: close button replaces skip) =====
-function openGiftModal(data) {
-  document.getElementById("giftMobileDisplay").textContent = currentMobile;
-  document.getElementById("giftValueDisplay").textContent = "₹" + (data.rewardValue || 150);
-  document.getElementById("giftError").textContent = "";
-
-  const claimBtn = document.getElementById("claimGiftBtn");
-  claimBtn.disabled = false;
-  claimBtn.innerHTML = "🎉 Claim Free Meal Now";
-
-  document.getElementById("giftModal").classList.remove("hidden");
-}
-
-// Close button (X) and overlay: proceed to entry modal
-document.getElementById("giftModalClose").addEventListener("click", () => {
-  document.getElementById("giftModal").classList.add("hidden");
-  openCustomerModal(currentCustomerData);
-});
-
-document.getElementById("giftModal").addEventListener("click", (e) => {
-  if (e.target === document.getElementById("giftModal")) {
-    document.getElementById("giftModalClose").click();
-  }
-});
-
-document.getElementById("claimGiftBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("claimGiftBtn");
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Claiming...';
-  document.getElementById("giftError").textContent = "";
-
-  const result = await apiCall("claimReward", { mobile: currentMobile });
-
-  if (result.success) {
-    showToast("Reward claimed! 🎁🎉", "success");
-
-    currentCustomerData.rewardsClaimed = result.rewardsClaimed;
-    currentCustomerData.eligible = result.eligible;
-    currentCustomerData.totalEntries = result.totalEntries;
-
-    document.getElementById("giftModal").classList.add("hidden");
-    openCustomerModal(currentCustomerData);
-  } else {
-    document.getElementById("giftError").textContent = result.error || "Failed to claim reward.";
-    btn.disabled = false;
-    btn.innerHTML = "🎉 Claim Free Meal Now";
-  }
-});
-
-// ===== CUSTOMER MODAL =====
-function openCustomerModal(data) {
-  const modal = document.getElementById("customerModal");
-  modal.classList.remove("hidden");
-
-  document.getElementById("modalMobile").textContent = currentMobile;
-
-  buildDots(data.totalEntries, data.cycle, data.rewardsClaimed);
-
-  const rewardsSection = document.getElementById("rewardsSection");
-  const rewardsDisplay = document.getElementById("rewardsDisplay");
-  if (data.rewardsClaimed > 0) {
-    rewardsSection.style.display = "";
-    rewardsDisplay.innerHTML = "";
-    for (let i = 0; i < data.rewardsClaimed; i++) {
-      const span = document.createElement("span");
-      span.className = "reward-emoji";
-      span.textContent = "🎁";
-      span.style.animationDelay = (i * 0.1) + "s";
-      rewardsDisplay.appendChild(span);
+    // Check last visit date
+    const todayDate = istDateStr();
+    if (cust.found && cust.lastVisitDate === todayDate) {
+      toast('Entry already added today for this number. Try again tomorrow.', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '➕ Add Entry';
+      return;
     }
-  } else {
-    rewardsSection.style.display = "none";
+
+    // Show entry form
+    openEntryForm(mobile, cust);
+
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
   }
-
-  const banner = document.getElementById("eligibilityBanner");
-  const saveBtn = document.getElementById("saveEntryBtn");
-
-  banner.style.display = "";
-  if (data.eligible) {
-    banner.className = "eligibility-banner eligible";
-    banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + (data.rewardValue || 150) + ")!";
-    saveBtn.disabled = false;
-    saveBtn.title = "";
-  } else {
-    banner.className = "eligibility-banner not-eligible";
-    const pos = data.totalEntries % data.cycle;
-    const remaining = pos === 0 ? data.cycle : data.cycle - pos;
-    banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
-    saveBtn.disabled = false;
-    saveBtn.title = "";
-  }
-
-  document.getElementById("dateInput").value = getISTDate();
-  document.getElementById("timeInput").value = getISTTime();
-  document.getElementById("amountInput").value = "";
-  document.getElementById("messageInput").value = "";
-  document.getElementById("formError").textContent = "";
-  document.getElementById("whatsappSection").style.display = "none";
-  document.getElementById("entriesList").classList.add("hidden");
-  document.getElementById("showDetailsBtn").textContent = "📜 Show Past Entry Details";
-  document.getElementById("entryForm").style.display = "";
-  saveBtn.innerHTML = "💾 Save Entry";
-
-  buildPastEntries(data.entries || []);
+  btn.disabled = false;
+  btn.innerHTML = '➕ Add Entry';
 }
 
-function buildDots(totalEntries, cycle, rewardsClaimed) {
-  const section = document.getElementById("dotsSection");
-  const label = section.querySelector('.dots-section-label');
-  section.innerHTML = '';
-  section.appendChild(label);
+function openEntryForm(mobile, cust) {
+  document.getElementById('dispMobile').value = mobile;
+  document.getElementById('dispDate').value = istDateStr();
+  document.getElementById('dispTime').value = istTimeStr();
+  document.getElementById('inputAmount').value = '';
+  document.getElementById('inputMessage').value = '';
+  hideErr('errAmount');
+  hide('rowWhatsapp');
+  hide('rowDetailsBtn');
 
-  const completedCycles = Math.floor(totalEntries / cycle);
-  const totalRows = completedCycles + (totalEntries % cycle > 0 || totalEntries === 0 ? 1 : 0);
+  const cycle = APP_CONFIG ? APP_CONFIG.cycle : 10;
 
-  for (let row = 0; row < totalRows; row++) {
-    const dotRow = document.createElement("div");
-    dotRow.className = "dot-row";
+  // Check if this customer needs to claim reward BEFORE adding entry
+  const needsClaim = cust.found && cust.eligible &&
+    cust.rewardsClaimed < cust.totalEntries / cycle;
 
-    const rowLabel = document.createElement("div");
-    rowLabel.className = "dot-row-label";
-    const startNum = row * cycle + 1;
-    const endNum = (row + 1) * cycle;
-    rowLabel.textContent = "Visits " + startNum + "–" + endNum;
-    dotRow.appendChild(rowLabel);
+  const btnSave = document.getElementById('btnSaveEntry');
+  const btnClaim = document.getElementById('btnClaimForce');
+
+  if (needsClaim) {
+    btnSave.style.display = 'none';
+    btnClaim.style.display = '';
+    toast('🎁 Customer must claim reward before new entry!', 'info');
+    show('rowDetailsBtn');
+  } else {
+    btnSave.style.display = '';
+    btnClaim.style.display = 'none';
+  }
+
+  show('cardEntryForm');
+  document.getElementById('inputAmount').focus();
+}
+
+function closeEntryForm() {
+  hide('cardEntryForm');
+  CURRENT_CUSTOMER = null;
+  LAST_ENTRY_RESULT = null;
+}
+
+async function handleSaveEntry() {
+  const mobile = document.getElementById('dispMobile').value;
+  const amount = parseInt(document.getElementById('inputAmount').value, 10);
+  const date   = document.getElementById('dispDate').value;
+  const time   = istTimeStr(); // refresh time
+  const message = document.getElementById('inputMessage').value.trim();
+  const minAmt = APP_CONFIG ? APP_CONFIG.minAmount : 100;
+
+  hideErr('errAmount');
+  if (isNaN(amount) || amount < minAmt) {
+    showErr('errAmount');
+    document.getElementById('inputAmount').classList.add('error');
+    return;
+  }
+  document.getElementById('inputAmount').classList.remove('error');
+
+  const btn = document.getElementById('btnSaveEntry');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving…';
+
+  try {
+    const result = await api({ action: 'addEntry', mobile, amount, date, time, message });
+    if (result.error) {
+      toast(result.error, 'error');
+      btn.disabled = false;
+      btn.innerHTML = '💾 Save Entry';
+      return;
+    }
+
+    LAST_ENTRY_RESULT = result;
+    CURRENT_CUSTOMER = {
+      found: true, mobile,
+      totalEntries: result.totalEntries,
+      rewardsClaimed: result.rewardsClaimed,
+      eligible: result.eligible,
+      lastVisitDate: date
+    };
+
+    toast('✅ Entry saved! Visit #' + result.index, 'success');
+
+    // Disable save after success
+    btn.disabled = true;
+    btn.innerHTML = '✔ Saved';
+
+    // Build WhatsApp link
+    buildWhatsAppLink(result, mobile, amount, message);
+    show('rowWhatsapp');
+    show('rowDetailsBtn');
+
+    // If now eligible, show claim button
+    const cycle = result.cycle || (APP_CONFIG ? APP_CONFIG.cycle : 10);
+    if (result.eligible && result.rewardsClaimed < result.totalEntries / cycle) {
+      document.getElementById('btnClaimForce').style.display = '';
+    }
+
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '💾 Save Entry';
+  }
+}
+
+// ──── WHATSAPP LINK ────
+function buildWhatsAppLink(result, mobile, amount, message) {
+  const template = result.whatsappTemplate || '';
+  const cycle    = result.cycle || (APP_CONFIG ? APP_CONFIG.cycle : 10);
+  const total    = result.totalEntries;
+
+  // cyclePosition
+  const mod = total % cycle;
+  const cyclePosition = mod === 0 ? cycle : mod;
+  const completedVisit = cyclePosition + '/' + cycle;
+
+  // loyalty link
+  const loyaltyNum = mod === 0 ? cycle : cyclePosition;
+  const loyaltyLink = 'https://perfectpizzapoint.github.io/' + loyaltyNum + '/';
+
+  let link = template
+    .replace('<number>', mobile)
+    .replace('<completedvisit>', encodeURIComponent(completedVisit))
+    .replace('<amount>', amount)
+    .replace('<message>', encodeURIComponent(message || ''))
+    .replace('<loyality>', encodeURIComponent(loyaltyLink));
+
+  document.getElementById('linkWhatsapp').href = link;
+}
+
+// ──── CLAIM REWARD ────
+async function handleClaimReward() {
+  const mobile = document.getElementById('dispMobile').value;
+  const btn = document.getElementById('btnClaimForce');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Claiming…';
+
+  try {
+    const result = await api({ action: 'claimReward', mobile });
+    if (result.error) {
+      toast(result.error, 'error');
+      btn.disabled = false;
+      btn.innerHTML = '🎁 Claim Reward';
+      return;
+    }
+
+    toast('🎉 Reward claimed! Free meal up to ₹' + result.rewardValue, 'success');
+    CURRENT_CUSTOMER = {
+      found: true, mobile,
+      totalEntries: result.totalEntries,
+      rewardsClaimed: result.rewardsClaimed,
+      eligible: result.eligible,
+      lastVisitDate: CURRENT_CUSTOMER ? CURRENT_CUSTOMER.lastVisitDate : ''
+    };
+
+    btn.innerHTML = '✔ Claimed';
+    btn.disabled = true;
+
+    // Now allow adding entry
+    const btnSave = document.getElementById('btnSaveEntry');
+    btnSave.style.display = '';
+    btnSave.disabled = false;
+    btnSave.innerHTML = '💾 Save Entry';
+
+    show('rowDetailsBtn');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '🎁 Claim Reward';
+  }
+}
+
+// ══════════════════════════════════════
+//  CUSTOMER DETAILS MODAL
+// ══════════════════════════════════════
+
+function openDetailsModal() {
+  if (!CURRENT_CUSTOMER || !CURRENT_CUSTOMER.found) {
+    toast('No customer data available.', 'error');
+    return;
+  }
+  renderDots();
+  renderRewardEmojis();
+  renderEligibility();
+  hide('pastEntriesWrap');
+  document.getElementById('btnShowDetails').textContent = '📄 Show Details';
+  document.getElementById('modalDetails').classList.add('open');
+}
+
+function closeDetailsModal() {
+  document.getElementById('modalDetails').classList.remove('open');
+}
+
+function renderDots() {
+  const container = document.getElementById('dotsContainer');
+  container.innerHTML = '';
+  const c = CURRENT_CUSTOMER;
+  const cycle = APP_CONFIG ? APP_CONFIG.cycle : 10;
+  const total = c.totalEntries;
+  const fullCycles = Math.floor(total / cycle);
+  const remainder = total % cycle;
+  const rowsNeeded = fullCycles + (remainder > 0 ? 1 : 0);
+
+  for (let row = 0; row < Math.max(rowsNeeded, 1); row++) {
+    const div = document.createElement('div');
+    div.className = 'dots-cycle';
+
+    const label = document.createElement('span');
+    label.className = 'dots-cycle__label';
+    const start = row * cycle + 1;
+    const end = start + cycle - 1;
+    label.textContent = start + '–' + end;
+    div.appendChild(label);
 
     for (let d = 0; d < cycle; d++) {
-      const dot = document.createElement("div");
-      dot.className = "dot";
-      const entryNum = row * cycle + d + 1;
-      if (entryNum <= totalEntries) {
-        dot.classList.add("filled");
-        if ((entryNum % cycle === 0) && (entryNum / cycle <= rewardsClaimed)) {
-          dot.classList.add("reward-dot");
-        }
+      const dotIndex = row * cycle + d + 1;
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      if (dotIndex <= total) {
+        dot.classList.add('filled');
+        // Mark cycle-completion dots as reward
+        if (dotIndex % cycle === 0) dot.classList.add('reward');
       }
-      dotRow.appendChild(dot);
+      dot.title = 'Visit ' + dotIndex;
+      div.appendChild(dot);
     }
-    section.appendChild(dotRow);
+    container.appendChild(div);
   }
 }
 
-function buildPastEntries(entries) {
-  const list = document.getElementById("entriesList");
-  list.innerHTML = "";
-  if (entries.length === 0) {
-    list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;padding:12px">No past entries yet. This is a new customer!</p>';
+function renderRewardEmojis() {
+  const container = document.getElementById('rewardEmojis');
+  container.innerHTML = '';
+  const count = CURRENT_CUSTOMER.rewardsClaimed || 0;
+  if (count === 0) {
+    container.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted);">None yet</span>';
     return;
   }
-  const reversed = [...entries].reverse();
-  for (const entry of reversed) {
-    const item = document.createElement("div");
-    item.className = "entry-item";
-    item.innerHTML =
-      '<span>#</span><span>' + entry.index + '</span>' +
-      '<span>Mobile</span><span>' + entry.mobile + '</span>' +
-      '<span>Amount</span><span>₹' + entry.amount + '</span>' +
-      '<span>Date</span><span>' + entry.date + '</span>' +
-      '<span>Time</span><span>' + entry.time + '</span>' +
-      '<span>Message</span><span>' + (entry.message || '—') + '</span>';
-    list.appendChild(item);
+  for (let i = 0; i < count; i++) {
+    const span = document.createElement('span');
+    span.className = 'reward-emoji';
+    span.textContent = '🍕';
+    span.style.animationDelay = (i * 0.08) + 's';
+    container.appendChild(span);
   }
 }
 
-document.getElementById("showDetailsBtn").addEventListener("click", () => {
-  const list = document.getElementById("entriesList");
-  const btn = document.getElementById("showDetailsBtn");
-  if (list.classList.contains("hidden")) {
-    list.classList.remove("hidden");
-    btn.textContent = "📜 Hide Past Entry Details";
+function renderEligibility() {
+  const banner = document.getElementById('eligibilityBanner');
+  const c = CURRENT_CUSTOMER;
+  const cycle = APP_CONFIG ? APP_CONFIG.cycle : 10;
+  const rewardVal = APP_CONFIG ? APP_CONFIG.rewardValue : 150;
+  const needsClaim = c.eligible && c.rewardsClaimed < c.totalEntries / cycle;
+
+  if (needsClaim) {
+    banner.innerHTML =
+      '<div class="eligibility-banner eligible">' +
+      '🎉 Eligible for Reward! Free meal up to ₹' + rewardVal +
+      '</div>';
   } else {
-    list.classList.add("hidden");
-    btn.textContent = "📜 Show Past Entry Details";
+    const mod = c.totalEntries % cycle;
+    const remain = cycle - mod;
+    banner.innerHTML =
+      '<div class="eligibility-banner not-eligible">' +
+      '📊 ' + (mod === 0 && c.totalEntries > 0 ? cycle : mod) + '/' + cycle +
+      ' visits completed. ' + (mod === 0 && c.totalEntries > 0 ? 0 : remain) +
+      ' more to next reward.' +
+      '</div>';
   }
-});
+}
 
-// ===== SAVE ENTRY (with optimistic UI – Fix #5) =====
-document.getElementById("saveEntryBtn").addEventListener("click", async () => {
-  const amount = document.getElementById("amountInput").value.trim();
-  const message = document.getElementById("messageInput").value.trim();
-  const errEl = document.getElementById("formError");
-  errEl.textContent = "";
+async function loadPastEntries() {
+  const btn = document.getElementById('btnShowDetails');
+  const wrap = document.getElementById('pastEntriesWrap');
 
-  const minAmount = (appConfig && appConfig.minAmount) || 100;
-  if (!amount || Number(amount) < minAmount) {
-    errEl.textContent = "Billing amount must be ₹" + minAmount + " or more.";
+  if (!wrap.classList.contains('hidden')) {
+    hide('pastEntriesWrap');
+    btn.textContent = '📄 Show Details';
     return;
   }
 
-  const btn = document.getElementById("saveEntryBtn");
+  btn.innerHTML = '<span class="spinner"></span> Loading…';
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Saving...';
 
-  // Timeout guard
-  const timeoutId = setTimeout(() => {
-    if (btn.disabled) {
-      btn.disabled = false;
-      btn.innerHTML = "💾 Save Entry";
-      errEl.textContent = "Request timed out. Please try again.";
-    }
-  }, 30000);
+  try {
+    const mobile = CURRENT_CUSTOMER.mobile;
+    const data = await api({ action: 'getCustomerDetails', mobile });
+    const tbody = document.getElementById('pastEntriesBody');
+    tbody.innerHTML = '';
 
-  // ───── Step A & B: Optimistic UI update ─────
-  const optimisticTotal = (currentCustomerData.totalEntries || 0) + 1;
-  const optimisticEligible = optimisticTotal % appConfig.cycle === 0;
-
-  // Update dots and eligibility banner immediately
-  buildDots(optimisticTotal, appConfig.cycle, currentCustomerData.rewardsClaimed);
-  const banner = document.getElementById("eligibilityBanner");
-  if (optimisticEligible) {
-    banner.className = "eligibility-banner eligible";
-    banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + appConfig.rewardValue + ")!";
-  } else {
-    banner.className = "eligibility-banner not-eligible";
-    const pos = optimisticTotal % appConfig.cycle;
-    const remaining = pos === 0 ? appConfig.cycle : appConfig.cycle - pos;
-    banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
-  }
-
-  // Hide entry form, show WhatsApp placeholder
-  document.getElementById("entryForm").style.display = "none";
-  const whatsappSec = document.getElementById("whatsappSection");
-  whatsappSec.style.display = "";
-  const wabtn = document.getElementById("whatsappBtn");
-  wabtn.href = "#";
-  wabtn.textContent = "Preparing message...";
-  wabtn.style.opacity = "0.5";
-
-  // ───── Step C: Actual API call ─────
-  const result = await apiCall("addEntry", {
-    mobile: currentMobile,
-    amount: amount,
-    message: message
-  });
-
-  clearTimeout(timeoutId);
-
-  if (result.success) {
-    // Success: finalise WhatsApp link and update state
-    wabtn.href = result.whatsappLink;
-    wabtn.textContent = "📱 Send WhatsApp Message";
-    wabtn.style.opacity = "1";
-    showToast("Entry saved! ✅", "success");
-
-    currentCustomerData.totalEntries = result.totalEntries;
-    currentCustomerData.eligible = result.eligible;
-    currentCustomerData.rewardsClaimed = result.rewardsClaimed;
-  } else {
-    // Failure: rollback UI to original state
-    document.getElementById("entryForm").style.display = "";
-    whatsappSec.style.display = "none";
-    buildDots(currentCustomerData.totalEntries, appConfig.cycle, currentCustomerData.rewardsClaimed);
-
-    const banner = document.getElementById("eligibilityBanner");
-    if (currentCustomerData.eligible) {
-      banner.className = "eligibility-banner eligible";
-      banner.textContent = "🎉 Eligible for FREE meal (up to ₹" + appConfig.rewardValue + ")!";
+    if (data.entries && data.entries.length > 0) {
+      data.entries.forEach(e => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + e.index + '</td>' +
+          '<td>' + e.mobile + '</td>' +
+          '<td>₹' + e.amount + '</td>' +
+          '<td>' + e.date + '</td>' +
+          '<td>' + e.time + '</td>' +
+          '<td>' + (e.message || '—') + '</td>';
+        tbody.appendChild(tr);
+      });
     } else {
-      banner.className = "eligibility-banner not-eligible";
-      const pos = currentCustomerData.totalEntries % appConfig.cycle;
-      const remaining = pos === 0 ? appConfig.cycle : appConfig.cycle - pos;
-      banner.textContent = remaining + " more visit" + (remaining !== 1 ? "s" : "") + " to earn a free meal!";
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">No entries found.</td></tr>';
+    }
+    show('pastEntriesWrap');
+    btn.textContent = '📄 Hide Details';
+  } catch (e) {
+    toast('Error loading details: ' + e.message, 'error');
+    btn.textContent = '📄 Show Details';
+  }
+  btn.disabled = false;
+}
+
+// ══════════════════════════════════════
+//  ADMIN PANEL
+// ══════════════════════════════════════
+
+async function handleAdminLogin() {
+  const user = document.getElementById('adminUser').value.trim();
+  const pass = document.getElementById('adminPass').value.trim();
+  hideErr('errLogin');
+
+  const btn = document.getElementById('btnLogin');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Logging in…';
+
+  try {
+    // Step 1: Verify credentials against Sheet 3
+    const authResult = await api({ action: 'getAdminCreds', inputUser: user, inputPass: pass });
+
+    if (!authResult.authenticated) {
+      showErr('errLogin');
+      btn.disabled = false;
+      btn.innerHTML = 'Login';
+      return;
     }
 
-    errEl.textContent = result.error || "Failed to save entry.";
-    showToast(result.error || "Error saving entry", "error");
-  }
+    // Step 2: Fetch admin dashboard data
+    ADMIN_AUTHENTICATED = true;
+    ADMIN_DATA = await api({ action: 'getAdminData' });
 
-  // Always re-enable button
+    hide('adminLoginWrap');
+    show('adminDashboard');
+    renderAdminDashboard(ADMIN_DATA);
+    toast('Welcome, Admin! 🎉', 'success');
+  } catch (e) {
+    toast('Login error: ' + e.message, 'error');
+  }
   btn.disabled = false;
-  btn.innerHTML = "💾 Save Entry";
-});
-
-// Amount input – numeric only
-document.getElementById("amountInput").addEventListener("input", (e) => {
-  e.target.value = e.target.value.replace(/[^\d]/g, "");
-});
-
-// ===== CLOSE MODAL =====
-function closeModal() {
-  document.getElementById("customerModal").classList.add("hidden");
-  currentMobile = "";
-  currentCustomerData = null;
-  setTimeout(() => document.getElementById("mobileInput").focus(), 100);
+  btn.innerHTML = 'Login';
 }
 
-document.getElementById("modalCloseBtn").addEventListener("click", closeModal);
-document.getElementById("cancelEntryBtn").addEventListener("click", closeModal);
-document.getElementById("customerModal").addEventListener("click", (e) => {
-  if (e.target === document.getElementById("customerModal")) closeModal();
-});
+// ──── Dashboard Render ────
+let todayView = 'entries';
 
-// ===== ADMIN PANEL =====
-async function loadAdminData() {
-  const loading = document.getElementById("adminLoading");
-  loading.classList.remove("hidden");
+function renderAdminDashboard(data) {
+  if (!data) return;
 
-  const result = await apiCall("getAdminData");
-  loading.classList.add("hidden");
-
-  if (!result.success) {
-    showToast(result.error || "Failed to load admin data.", "error");
-    return;
-  }
-
-  renderAdminStats(result);
-  renderTopCustomers(result.topCustomers);
-  renderRepeatChart(result.repeatCustomers, result.newCustomers);
-}
-
-function renderAdminStats(data) {
-  const grid = document.getElementById("statsGrid");
-  grid.innerHTML = "";
-
+  const grid = document.getElementById('statsGrid');
   const stats = [
-    { icon: "👥", value: data.totalCustomers, label: "Total Customers" },
-    { icon: "📝", value: data.totalVisits, label: "Total Visits" },
-    { icon: "🎁", value: data.totalRewardsGiven, label: "Rewards Given" },
-    { icon: "⏳", value: data.rewardsPending, label: "Rewards Pending" },
-    {
-      icon: "📅", value: data.todayEntries, label: "Today's Entries",
-      altValue: "₹" + data.todayAmount, altLabel: "Today's Amount", toggleable: true
-    },
-    { icon: "💰", value: "₹" + data.avgBilling, label: "Avg Billing" },
-    { icon: "📊", value: data.avgVisitsPerCustomer, label: "Avg Visits/Customer" },
-    { icon: "🏆", value: data.rewardConversionRate + "%", label: "Reward Conv. Rate" }
+    { label: 'Total Customers', value: data.totalCustomers, icon: '👥' },
+    { label: 'Total Visits', value: data.totalVisits, icon: '📊' },
+    { label: 'Rewards Given', value: data.rewardsGiven, icon: '🎁' },
+    { label: 'Rewards Pending', value: data.rewardsPending, icon: '⏳' },
+    { label: 'Avg Billing', value: '₹' + data.avgBilling, icon: '💰' },
+    { label: 'Avg Visits/Cust', value: data.avgVisits, icon: '🔄' },
+    { label: 'Reward Conv. Rate', value: data.conversionRate + '%', icon: '📈' },
   ];
 
-  stats.forEach((s, i) => {
-    const card = document.createElement("div");
-    card.className = "stat-card";
+  grid.innerHTML = stats.map(s =>
+    '<div class="stat-card">' +
+    '<div class="stat-card__value">' + s.icon + ' ' + s.value + '</div>' +
+    '<div class="stat-card__label">' + s.label + '</div>' +
+    '</div>'
+  ).join('');
 
-    if (s.toggleable) {
-      card.innerHTML =
-        '<div class="stat-icon">' + s.icon + '</div>' +
-        '<div class="toggle-group" style="margin-bottom:6px">' +
-          '<button class="toggle-btn active" data-show="primary">Entries</button>' +
-          '<button class="toggle-btn" data-show="alt">Amount</button>' +
-        '</div>' +
-        '<div class="stat-value">' + s.value + '</div>' +
-        '<div class="stat-label">' + s.label + '</div>';
-      card.dataset.primaryVal = s.value;
-      card.dataset.primaryLabel = s.label;
-      card.dataset.altVal = s.altValue;
-      card.dataset.altLabel = s.altLabel;
-    } else {
-      card.innerHTML =
-        '<div class="stat-icon">' + s.icon + '</div>' +
-        '<div class="stat-value">' + s.value + '</div>' +
-        '<div class="stat-label">' + s.label + '</div>';
+  // Today's value
+  renderTodayValue(data);
+
+  // Repeat vs New chart
+  renderRepeatNewChart(data);
+
+  // Top customers
+  renderTopCustomers(data.topCustomers);
+}
+
+function renderTodayValue(data) {
+  const el = document.getElementById('todayValue');
+  if (todayView === 'entries') {
+    el.textContent = data.todayCount + ' entries';
+  } else {
+    el.textContent = '₹' + data.todayAmount;
+  }
+}
+
+function setTodayView(view) {
+  todayView = view;
+  document.querySelectorAll('#todayToggle .toggle-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  if (ADMIN_DATA) renderTodayValue(ADMIN_DATA);
+}
+
+let repeatNewChart = null;
+function renderRepeatNewChart(data) {
+  const ctx = document.getElementById('chartRepeatNew').getContext('2d');
+  if (repeatNewChart) repeatNewChart.destroy();
+
+  repeatNewChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Repeat', 'New'],
+      datasets: [{
+        data: [data.repeatCount, data.newCount],
+        backgroundColor: ['#e85d04', '#faa307'],
+        borderWidth: 0,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { family: 'Inter' } } }
+      },
+      cutout: '65%'
     }
-    grid.appendChild(card);
   });
+}
 
-  grid.querySelectorAll('.stat-card .toggle-btn').forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      const card = e.target.closest('.stat-card');
-      card.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove("active"));
-      e.target.classList.add("active");
-      const show = e.target.dataset.show;
-      const valEl = card.querySelector('.stat-value');
-      const labelEl = card.querySelector('.stat-label');
-      if (show === "alt") {
-        valEl.textContent = card.dataset.altVal;
-        labelEl.textContent = card.dataset.altLabel;
-      } else {
-        valEl.textContent = card.dataset.primaryVal;
-        labelEl.textContent = card.dataset.primaryLabel;
+function renderTopCustomers(list) {
+  const ul = document.getElementById('topCustomersList');
+  if (!list || list.length === 0) {
+    ul.innerHTML = '<li style="color:var(--text-muted);">No data yet.</li>';
+    return;
+  }
+  ul.innerHTML = list.map((c, i) =>
+    '<li>' +
+    '<div style="display:flex;align-items:center;">' +
+    '<span class="top-list__rank">' + (i + 1) + '</span>' +
+    '<span>' + maskMobile(c.mobile) + '</span>' +
+    '</div>' +
+    '<span style="font-weight:700;color:var(--brand-primary);">' + c.entries + ' visits</span>' +
+    '</li>'
+  ).join('');
+}
+
+function maskMobile(m) {
+  if (!m || m.length < 10) return m;
+  return m.substring(0, 2) + '••••' + m.substring(6);
+}
+
+// ──── Heatmap ────
+let heatmapType = 'entries';
+
+function setHeatmapType(type) {
+  heatmapType = type;
+  document.querySelectorAll('#heatmapToggle .toggle-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+async function calculateHeatmap() {
+  const btn = document.getElementById('btnCalcHeatmap');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Calculating…';
+
+  try {
+    const type = heatmapType === 'amount' ? 'amount' : 'entries';
+    const data = await api({ action: 'getHeatmapData', type });
+    renderHeatmap(data.matrix);
+    toast('Heatmap calculated!', 'success');
+  } catch (e) {
+    toast('Heatmap error: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '🔄 Calculate Heatmap';
+}
+
+function renderHeatmap(matrix) {
+  const container = document.getElementById('heatmapContainer');
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  let maxVal = 0;
+  matrix.forEach(row => row.forEach(v => { if (v > maxVal) maxVal = v; }));
+
+  let html = '<div class="heatmap-grid">';
+  // Header row
+  html += '<div class="heatmap-label"></div>';
+  for (let h = 0; h < 24; h++) {
+    html += '<div class="heatmap-header">' + h + '</div>';
+  }
+  // Data rows
+  for (let d = 0; d < 7; d++) {
+    html += '<div class="heatmap-label">' + days[d] + '</div>';
+    for (let h = 0; h < 24; h++) {
+      const val = matrix[d][h];
+      const intensity = maxVal > 0 ? val / maxVal : 0;
+      const bg = intensity === 0
+        ? 'var(--dot-empty)'
+        : 'rgba(232, 93, 4, ' + (0.15 + intensity * 0.85) + ')';
+      html += '<div class="heatmap-cell" style="background:' + bg + '">' +
+        '<div class="heatmap-tooltip">' + days[d] + ' ' + h + ':00 — ' + val + '</div>' +
+        '</div>';
+    }
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ──── Time Between Visits ────
+let tbvChart = null;
+
+async function calculateTimeBetweenVisits() {
+  const btn = document.getElementById('btnCalcTBV');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Calculating…';
+
+  try {
+    const data = await api({ action: 'getTimeBetweenVisits' });
+    show('tbvContainer');
+
+    const statsGrid = document.getElementById('tbvStats');
+    statsGrid.innerHTML = [
+      { label: 'Avg Gap', value: data.avg + ' days' },
+      { label: 'Min Gap', value: data.min + ' days' },
+      { label: 'Max Gap', value: data.max + ' days' },
+      { label: 'Total Pairs', value: data.totalGaps || 0 },
+    ].map(s =>
+      '<div class="stat-card"><div class="stat-card__value">' + s.value +
+      '</div><div class="stat-card__label">' + s.label + '</div></div>'
+    ).join('');
+
+    // Distribution chart
+    const dist = data.distribution || {};
+    const labels = Object.keys(dist).sort((a, b) => Number(a) - Number(b));
+    const values = labels.map(k => dist[k]);
+
+    const ctx = document.getElementById('chartTBV').getContext('2d');
+    if (tbvChart) tbvChart.destroy();
+    tbvChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels.map(l => l + (l === '30' ? '+' : '') + 'd'),
+        datasets: [{
+          label: 'Frequency',
+          data: values,
+          backgroundColor: 'rgba(232,93,4,.7)',
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { font: { family: 'Inter' } } },
+          x: { ticks: { font: { family: 'Inter', size: 10 } } }
+        }
       }
     });
-  });
-}
-
-function renderTopCustomers(customers) {
-  const tbody = document.querySelector("#topCustomersTable tbody");
-  tbody.innerHTML = "";
-  if (!customers || customers.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);text-align:center;padding:20px">No data yet</td></tr>';
-    return;
+    toast('Time-between-visits calculated!', 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
   }
-  customers.forEach((c, i) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + c.mobile + '</td><td>' + c.count + '</td>';
-    tbody.appendChild(tr);
-  });
-}
-
-function renderRepeatChart(repeat, newC) {
-  const total = repeat + newC;
-
-  const side = document.getElementById("repeatStatsSide");
-  side.innerHTML = "";
-
-  const items = [
-    { value: total, label: "Total Customers", class: "" },
-    { value: repeat, label: "Repeat Customers", class: "" },
-    { value: newC, label: "New Customers", class: "green" },
-    { value: total > 0 ? ((repeat / total) * 100).toFixed(1) + "%" : "0%", label: "Repeat Rate", class: "" },
-  ];
-
-  items.forEach(item => {
-    const card = document.createElement("div");
-    card.className = "repeat-stat-card";
-    card.innerHTML =
-      '<div class="repeat-stat-value ' + item.class + '">' + item.value + '</div>' +
-      '<div class="repeat-stat-label">' + item.label + '</div>';
-    side.appendChild(card);
-  });
-
-  const ctx = document.getElementById("repeatChart").getContext("2d");
-  if (adminCharts.repeat) adminCharts.repeat.destroy();
-
-  adminCharts.repeat = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels: ["Repeat", "New"],
-      datasets: [{
-        data: [repeat, newC],
-        backgroundColor: ["#ff8c32", "#34d399"],
-        borderColor: "transparent",
-        borderWidth: 0,
-        hoverOffset: 6
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      cutout: "68%",
-      plugins: {
-        legend: {
-          position: "bottom",
-          labels: {
-            color: "var(--text-muted, #6b6058)",
-            font: { family: "Outfit", size: 12 },
-            padding: 16,
-            usePointStyle: true,
-            pointStyleWidth: 8
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              const val = ctx.raw;
-              const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
-              return " " + val + " (" + pct + "%)";
-            }
-          }
-        }
-      }
-    }
-  });
-}
-
-// ===== HEATMAP =====
-let heatmapType = "entries";
-
-document.querySelectorAll("#heatmapToggle .toggle-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll("#heatmapToggle .toggle-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    heatmapType = btn.dataset.type;
-  });
-});
-
-document.getElementById("calcHeatmapBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("calcHeatmapBtn");
-  btn.disabled = true;
-  btn.textContent = "⏳ Calculating...";
-
-  const result = await apiCall("getHeatmapData", { type: heatmapType });
   btn.disabled = false;
-  btn.textContent = "📊 Calculate Heatmap";
-
-  if (!result.success) {
-    showToast(result.error || "Heatmap calculation failed.", "error");
-    return;
-  }
-  renderHeatmap(result.heatmap, result.type);
-});
-
-function renderHeatmap(data, type) {
-  const area = document.getElementById("heatmapArea");
-  area.innerHTML = "";
-
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  let maxVal = 0;
-  data.forEach(row => row.forEach(v => { if (v > maxVal) maxVal = v; }));
-
-  const hourRow = document.createElement("div");
-  hourRow.className = "heatmap-hour-labels";
-  hourRow.innerHTML = '<div></div>';
-  for (let h = 0; h < 24; h++) {
-    const el = document.createElement("div");
-    el.className = "heatmap-hour";
-    el.textContent = h;
-    hourRow.appendChild(el);
-  }
-  area.appendChild(hourRow);
-
-  const container = document.createElement("div");
-  container.className = "heatmap-container";
-
-  const grid = document.createElement("div");
-  grid.className = "heatmap-grid";
-
-  for (let d = 0; d < 7; d++) {
-    const label = document.createElement("div");
-    label.className = "heatmap-label";
-    label.textContent = days[d];
-    grid.appendChild(label);
-
-    for (let h = 0; h < 24; h++) {
-      const cell = document.createElement("div");
-      cell.className = "heatmap-cell";
-      const val = data[d][h];
-      const intensity = maxVal > 0 ? val / maxVal : 0;
-      if (val === 0) {
-        cell.style.background = "var(--bg-primary)";
-      } else {
-        const alpha = 0.2 + intensity * 0.8;
-        cell.style.background = type === "amount"
-          ? `rgba(52, 211, 153, ${alpha})`
-          : `rgba(255, 140, 50, ${alpha})`;
-      }
-      cell.textContent = val > 0 ? (type === "amount" ? "₹" + val : val) : "";
-      cell.title = days[d] + " " + h + ":00 — " + (type === "amount" ? "₹" + val : val + " entries");
-      grid.appendChild(cell);
-    }
-  }
-
-  container.appendChild(grid);
-  area.appendChild(container);
-}
-
-// ===== TIME BETWEEN VISITS =====
-document.getElementById("calcVisitsBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("calcVisitsBtn");
-  btn.disabled = true;
-  btn.textContent = "⏳ Calculating...";
-
-  const result = await apiCall("getTimeBetweenVisits");
-  btn.disabled = false;
-  btn.textContent = "📊 Calculate";
-
-  if (!result.success) {
-    showToast(result.error || "Calculation failed.", "error");
-    return;
-  }
-  renderTimeBetween(result);
-});
-
-function renderTimeBetween(data) {
-  const area = document.getElementById("timeBetweenArea");
-  area.innerHTML = "";
-
-  const statsDiv = document.createElement("div");
-  statsDiv.className = "visit-stats";
-
-  const items = [
-    { value: data.avgGap + "d", label: "Avg Gap" },
-    { value: data.medianGap + "d", label: "Median" },
-    { value: data.minGap + "d", label: "Min Gap" },
-    { value: data.maxGap + "d", label: "Max Gap" },
-    { value: data.totalGaps, label: "Total Gaps" }
-  ];
-
-  items.forEach(item => {
-    const div = document.createElement("div");
-    div.className = "visit-stat";
-    div.innerHTML =
-      '<div class="visit-stat-value">' + item.value + '</div>' +
-      '<div class="visit-stat-label">' + item.label + '</div>';
-    statsDiv.appendChild(div);
-  });
-  area.appendChild(statsDiv);
-
-  if (data.totalGaps === 0) {
-    const msg = document.createElement("p");
-    msg.style.cssText = "color:var(--text-muted);font-size:0.85rem;margin-top:16px";
-    msg.textContent = "Not enough visit data to calculate gaps yet.";
-    area.appendChild(msg);
-    return;
-  }
-
-  const chartWrap = document.createElement("div");
-  chartWrap.className = "visit-dist-wrap";
-  const canvas = document.createElement("canvas");
-  canvas.id = "visitDistChart";
-  canvas.style.maxHeight = "260px";
-  chartWrap.appendChild(canvas);
-  area.appendChild(chartWrap);
-
-  if (adminCharts.visitDist) adminCharts.visitDist.destroy();
-
-  adminCharts.visitDist = new Chart(canvas.getContext("2d"), {
-    type: "bar",
-    data: {
-      labels: Object.keys(data.distribution).map(k => k + " days"),
-      datasets: [{
-        label: "Visit Gaps",
-        data: Object.values(data.distribution),
-        backgroundColor: "rgba(255, 140, 50, 0.55)",
-        borderColor: "#ff8c32",
-        borderWidth: 1.5,
-        borderRadius: 6,
-        borderSkipped: false
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      scales: {
-        x: {
-          ticks: { color: "#a89e94", font: { family: "Outfit", size: 12 } },
-          grid: { display: false }
-        },
-        y: {
-          ticks: { color: "#a89e94", font: { family: "Outfit", size: 12 }, stepSize: 1 },
-          grid: { color: "rgba(255,140,50,0.06)" },
-          beginAtZero: true
-        }
-      },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => " " + ctx.raw + " customer" + (ctx.raw !== 1 ? "s" : "")
-          }
-        }
-      }
-    }
-  });
+  btn.innerHTML = '🔄 Calculate';
 }
