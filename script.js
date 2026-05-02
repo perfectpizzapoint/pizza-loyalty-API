@@ -149,6 +149,9 @@ async function handleAddEntry() {
     // Show entry form
     openEntryForm(mobile, cust);
 
+    // Clear the mobile input for next entry
+    document.getElementById('inputMobile').value = '';
+
   } catch (e) {
     toast('Error: ' + e.message, 'error');
   }
@@ -548,10 +551,10 @@ function renderTodayValue(data) {
   }
 }
 
-function setTodayView(view) {
+function setTodayView(view, e) {
   todayView = view;
   document.querySelectorAll('#todayToggle .toggle-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  if (e && e.target) e.target.classList.add('active');
   if (ADMIN_DATA) renderTodayValue(ADMIN_DATA);
 }
 
@@ -591,7 +594,7 @@ function renderTopCustomers(list) {
     '<li>' +
     '<div style="display:flex;align-items:center;">' +
     '<span class="top-list__rank">' + (i + 1) + '</span>' +
-    '<span>' + maskMobile(c.mobile) + '</span>' +
+    '<span>' + c.mobile + '</span>' +
     '</div>' +
     '<span style="font-weight:700;color:var(--brand-primary);">' + c.entries + ' visits</span>' +
     '</li>'
@@ -606,10 +609,10 @@ function maskMobile(m) {
 // ──── Heatmap ────
 let heatmapType = 'entries';
 
-function setHeatmapType(type) {
+function setHeatmapType(type, e) {
   heatmapType = type;
   document.querySelectorAll('#heatmapToggle .toggle-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  if (e && e.target) e.target.classList.add('active');
 }
 
 async function calculateHeatmap() {
