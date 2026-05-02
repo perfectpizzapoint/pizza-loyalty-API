@@ -149,9 +149,6 @@ async function handleAddEntry() {
     // Show entry form
     openEntryForm(mobile, cust);
 
-    // Clear the mobile input for next entry
-    document.getElementById('inputMobile').value = '';
-
   } catch (e) {
     toast('Error: ' + e.message, 'error');
   }
@@ -194,6 +191,7 @@ function openEntryForm(mobile, cust) {
 
 function closeEntryForm() {
   hide('cardEntryForm');
+  document.getElementById('inputMobile').value = '';
   CURRENT_CUSTOMER = null;
   LAST_ENTRY_RESULT = null;
 }
@@ -551,10 +549,10 @@ function renderTodayValue(data) {
   }
 }
 
-function setTodayView(view, e) {
+function setTodayView(view, btn) {
   todayView = view;
   document.querySelectorAll('#todayToggle .toggle-btn').forEach(b => b.classList.remove('active'));
-  if (e && e.target) e.target.classList.add('active');
+  btn.classList.add('active');
   if (ADMIN_DATA) renderTodayValue(ADMIN_DATA);
 }
 
@@ -601,18 +599,13 @@ function renderTopCustomers(list) {
   ).join('');
 }
 
-function maskMobile(m) {
-  if (!m || m.length < 10) return m;
-  return m.substring(0, 2) + '••••' + m.substring(6);
-}
-
 // ──── Heatmap ────
 let heatmapType = 'entries';
 
-function setHeatmapType(type, e) {
+function setHeatmapType(type, btn) {
   heatmapType = type;
   document.querySelectorAll('#heatmapToggle .toggle-btn').forEach(b => b.classList.remove('active'));
-  if (e && e.target) e.target.classList.add('active');
+  btn.classList.add('active');
 }
 
 async function calculateHeatmap() {
