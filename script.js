@@ -376,6 +376,9 @@ function renderDots() {
     label.textContent = start + '–' + end;
     div.appendChild(label);
 
+    const dotsRow = document.createElement('div');
+    dotsRow.className = 'dots-row';
+
     for (let d = 0; d < cycle; d++) {
       const dotIndex = row * cycle + d + 1;
       const dot = document.createElement('span');
@@ -386,16 +389,20 @@ function renderDots() {
         if (dotIndex % cycle === 0) dot.classList.add('reward');
       }
       dot.title = 'Visit ' + dotIndex;
-      div.appendChild(dot);
+      dotsRow.appendChild(dot);
     }
+    div.appendChild(dotsRow);
     container.appendChild(div);
   }
 }
 
 function renderRewardEmojis() {
   const container = document.getElementById('rewardEmojis');
+  const badge = document.getElementById('rewardCountBadge');
   container.innerHTML = '';
   const count = CURRENT_CUSTOMER.rewardsClaimed || 0;
+  if (badge) badge.textContent = count;
+  
   if (count === 0) {
     container.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted);">None yet</span>';
     return;
