@@ -5,7 +5,7 @@
 
 // ──── CONFIGURATION ────
 // ⚠️  PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE:
-const API_URL = 'https://script.google.com/macros/s/AKfycbzyyi_faies09WyJOrGJaKxUDCiN33VFVgGuaa9ZP6PlLDrHvMkjR8sX7ffaFomVty3/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycby2RXrQOKkXQ3dgWRz_hCJMl9Fi9ZFxjm_hD6vuwCdh6KHPbRxCXfMsmKeK6JE1LunG-Q/exec';
 
 // Runtime cache
 let APP_CONFIG = null;       // { minAmount, cycle, rewardValue }
