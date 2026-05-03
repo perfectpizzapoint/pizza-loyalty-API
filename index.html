@@ -3,203 +3,321 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Perfect Pizza Point – Customer Loyalty Tracking System" />
+  <meta name="description" content="Perfect Pizza Point – Premium Customer Loyalty Tracking System" />
   <title>Perfect Pizza Point 🍕 Loyalty</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
 
+<!-- Animated Background -->
+<div class="bg-shape bg-shape-1"></div>
+<div class="bg-shape bg-shape-2"></div>
+<div class="bg-shape bg-shape-3"></div>
+
 <!-- ═══════ NAVBAR ═══════ -->
 <nav class="navbar" id="navbar">
-  <div class="navbar__brand">
-    <span class="emoji">🍕</span> Perfect Pizza Point
-  </div>
-  <div class="navbar__actions">
-    <button class="nav-btn active" id="navHome" onclick="showSection('home')">🏠 Home</button>
-    <button class="nav-btn" id="navAdmin" onclick="showSection('admin')">📊 Admin</button>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+  <div class="navbar__container">
+    <div class="navbar__brand">
+      <div class="brand-icon">🍕</div>
+      <span class="brand-text">Perfect Pizza Point</span>
+    </div>
+    <div class="navbar__actions">
+      <button class="nav-btn active" id="navHome" onclick="showSection('home')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span class="nav-text">Home</span>
+      </button>
+      <button class="nav-btn" id="navAdmin" onclick="showSection('admin')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+        <span class="nav-text">Admin</span>
+      </button>
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+    </div>
   </div>
 </nav>
 
 <!-- ═══════ TOAST CONTAINER ═══════ -->
 <div class="toast-container" id="toastContainer"></div>
 
-<!-- ═══════ HOME / ENTRY SECTION ═══════ -->
-<section class="page-section active" id="sectionHome">
-
-  <!-- Step 1: Mobile Input -->
-  <div class="card" id="cardMobile">
-    <div class="card__title">📱 Customer Entry System</div>
-    <div class="form-group">
-      <label class="form-label" for="inputMobile">Mobile Number</label>
-      <input class="form-input" id="inputMobile" type="tel" maxlength="10"
-             placeholder="Enter 10-digit mobile number"
-             oninput="this.value=this.value.replace(/\D/g,'')" />
-      <div class="error-msg" id="errMobile">Please enter exactly 10 digits.</div>
-    </div>
-    <button class="btn btn--primary btn--block" id="btnAddEntry" onclick="handleAddEntry()">
-      ➕ Add Entry
-    </button>
-  </div>
-
-  <!-- Step 2: Entry Form (hidden initially) -->
-  <div class="card mt-2 hidden" id="cardEntryForm">
-    <div class="card__title">📝 New Entry</div>
-
-    <div class="form-group">
-      <label class="form-label">Mobile Number</label>
-      <input class="form-input" id="dispMobile" disabled />
+<main class="main-content">
+  <!-- ═══════ HOME / ENTRY SECTION ═══════ -->
+  <section class="page-section active" id="sectionHome">
+    
+    <div class="hero-header">
+      <h1 class="hero-title">Loyalty <span class="text-gradient">Rewards</span></h1>
+      <p class="hero-subtitle">Track visits and reward your best customers.</p>
     </div>
 
-    <div class="form-group">
-      <label class="form-label" for="inputAmount">Billing Amount (₹)</label>
-      <input class="form-input" id="inputAmount" type="number" min="1" placeholder="Enter amount" />
-      <div class="error-msg" id="errAmount">Amount must be ₹<span id="minAmtLabel">100</span> or more.</div>
+    <!-- Step 1: Mobile Input -->
+    <div class="card glass-card fade-in" id="cardMobile">
+      <div class="card__title">
+        <div class="icon-circle">📱</div>
+        Customer Entry System
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="inputMobile">Mobile Number</label>
+        <div class="input-wrapper">
+          <span class="input-prefix">+91</span>
+          <input class="form-input with-prefix" id="inputMobile" type="tel" maxlength="10"
+                 placeholder="Enter 10-digit number"
+                 oninput="this.value=this.value.replace(/\D/g,'')" />
+        </div>
+        <div class="error-msg" id="errMobile">Please enter exactly 10 digits.</div>
+      </div>
+      <button class="btn btn--primary btn--block btn--lg pulse-hover" id="btnAddEntry" onclick="handleAddEntry()">
+        <span class="btn-icon">✨</span> Continue
+      </button>
     </div>
 
-    <div class="form-group">
-      <label class="form-label">Date</label>
-      <input class="form-input" id="dispDate" disabled />
+    <!-- Step 2: Entry Form (hidden initially) -->
+    <div class="card glass-card mt-3 hidden slide-up" id="cardEntryForm">
+      <div class="card__title">
+        <div class="icon-circle">📝</div>
+        New Entry Details
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Mobile Number</label>
+          <input class="form-input" id="dispMobile" disabled />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="inputAmount">Billing Amount (₹)</label>
+          <div class="input-wrapper">
+            <span class="input-icon">₹</span>
+            <input class="form-input with-icon" id="inputAmount" type="number" min="1" placeholder="0.00" />
+          </div>
+          <div class="error-msg" id="errAmount">Minimum amount is ₹<span id="minAmtLabel">100</span>.</div>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input class="form-input" id="dispDate" disabled />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Time</label>
+          <input class="form-input" id="dispTime" disabled />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="inputMessage">Message (Optional)</label>
+        <input class="form-input" id="inputMessage" type="text" placeholder="Add a note for this visit..." />
+      </div>
+
+      <div class="btn-row action-buttons">
+        <button class="btn btn--primary" id="btnSaveEntry" onclick="handleSaveEntry()">
+          💾 Save Entry
+        </button>
+        <button class="btn btn--danger btn--glow" id="btnClaimForce" onclick="handleClaimReward()" style="display:none;">
+          🎁 Claim Reward
+        </button>
+        <button class="btn btn--ghost" id="btnCloseEntry" onclick="closeEntryForm()">
+          Cancel
+        </button>
+      </div>
+
+      <!-- WhatsApp button (after save) -->
+      <div class="btn-row hidden mt-2" id="rowWhatsapp">
+        <a class="btn btn--whatsapp btn--block pulse-hover" id="linkWhatsapp" href="#" target="_blank" rel="noopener">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
+          Send Receipt to WhatsApp
+        </a>
+      </div>
+
+      <!-- Customer Details Popup trigger -->
+      <div class="btn-row hidden mt-1" id="rowDetailsBtn">
+        <button class="btn btn--outline btn--block" onclick="openDetailsModal()">
+          📋 View Full Customer Profile
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ ADMIN SECTION ═══════ -->
+  <section class="page-section wide" id="sectionAdmin">
+    
+    <!-- Login Gate -->
+    <div id="adminLoginWrap" class="fade-in">
+      <div class="card glass-card login-card">
+        <div class="card__title justify-center">
+          <div class="icon-circle mb-2">🔐</div>
+        </div>
+        <h2 class="text-center mb-3">Admin Portal</h2>
+        <div class="form-group">
+          <label class="form-label" for="adminUser">Username</label>
+          <input class="form-input" id="adminUser" type="text" placeholder="Enter username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="adminPass">Password</label>
+          <input class="form-input" id="adminPass" type="password" placeholder="Enter password" />
+        </div>
+        <div class="error-msg" id="errLogin">Invalid credentials. Please try again.</div>
+        <button class="btn btn--primary btn--block btn--lg mt-3" id="btnLogin" onclick="handleAdminLogin()">
+          Login to Dashboard
+        </button>
+      </div>
     </div>
 
-    <div class="form-group">
-      <label class="form-label">Time</label>
-      <input class="form-input" id="dispTime" disabled />
-    </div>
+    <!-- Dashboard (hidden until login) -->
+    <div class="hidden fade-in" id="adminDashboard">
+      <div class="dashboard-header">
+        <h2 class="dashboard-title">Overview</h2>
+        <div class="date-badge" id="currentDateBadge"></div>
+      </div>
 
-    <div class="form-group">
-      <label class="form-label" for="inputMessage">Message (optional)</label>
-      <input class="form-input" id="inputMessage" type="text" placeholder="Any note for this visit" />
-    </div>
+      <div class="stats-grid" id="statsGrid"></div>
 
-    <div class="btn-row">
-      <button class="btn btn--primary" id="btnSaveEntry" onclick="handleSaveEntry()">💾 Save Entry</button>
-      <button class="btn btn--danger" id="btnClaimForce" onclick="handleClaimReward()" style="display:none;">🎁 Claim Reward</button>
-      <button class="btn btn--ghost" id="btnCloseEntry" onclick="closeEntryForm()">✕ Close</button>
-    </div>
+      <div class="dashboard-grid">
+        <!-- Main Column -->
+        <div class="dashboard-main">
+          <!-- Heatmap -->
+          <div class="card chart-card">
+            <div class="chart-card__header">
+              <div class="chart-card__title">
+                <span class="icon">🔥</span> Day-Hour Activity Heatmap
+              </div>
+              <div class="toggle-row" id="heatmapToggle">
+                <button class="toggle-btn active" onclick="setHeatmapType('entries', this)">Entries</button>
+                <button class="toggle-btn" onclick="setHeatmapType('amount', this)">Amount</button>
+              </div>
+            </div>
+            <button class="btn btn--outline btn--sm mb-2" id="btnCalcHeatmap" onclick="calculateHeatmap()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg> Generate Heatmap
+            </button>
+            <div class="heatmap-wrapper">
+              <div id="heatmapContainer"></div>
+            </div>
+          </div>
 
-    <!-- WhatsApp button (after save) -->
-    <div class="btn-row hidden" id="rowWhatsapp">
-      <a class="btn btn--whatsapp btn--block" id="linkWhatsapp" href="#" target="_blank" rel="noopener">
-        📲 Send to WhatsApp
-      </a>
-    </div>
+          <!-- Time Between Visits -->
+          <div class="card chart-card">
+            <div class="chart-card__header">
+              <div class="chart-card__title">
+                <span class="icon">⏱️</span> Time Between Visits
+              </div>
+              <button class="btn btn--outline btn--sm" id="btnCalcTBV" onclick="calculateTimeBetweenVisits()">
+                Generate
+              </button>
+            </div>
+            <div id="tbvContainer" class="hidden">
+              <div class="tbv-stats-mini" id="tbvStats"></div>
+              <div class="chart-wrap mt-3"><canvas id="chartTBV"></canvas></div>
+            </div>
+          </div>
+        </div>
 
-    <!-- Customer Details Popup trigger -->
-    <div class="btn-row hidden" id="rowDetailsBtn">
-      <button class="btn btn--outline btn--sm" onclick="openDetailsModal()">📋 View Customer Details</button>
+        <!-- Sidebar Column -->
+        <div class="dashboard-sidebar">
+          <!-- Today toggle -->
+          <div class="card chart-card highlight-card">
+            <div class="chart-card__header">
+              <div class="chart-card__title">📅 Today's Summary</div>
+              <div class="toggle-row mini" id="todayToggle">
+                <button class="toggle-btn active" onclick="setTodayView('entries', this)">#</button>
+                <button class="toggle-btn" onclick="setTodayView('amount', this)">₹</button>
+              </div>
+            </div>
+            <div id="todayValue" class="huge-value"></div>
+          </div>
+
+          <!-- Repeat vs New -->
+          <div class="card chart-card">
+            <div class="chart-card__title mb-3">👥 Customer Base</div>
+            <div class="chart-wrap donut-wrap"><canvas id="chartRepeatNew"></canvas></div>
+          </div>
+
+          <!-- Top Repeat Customers -->
+          <div class="card chart-card">
+            <div class="chart-card__title mb-3">🏆 Top Loyalists</div>
+            <ul class="top-list" id="topCustomersList"></ul>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
-</section>
+  </section>
+</main>
 
 <!-- ═══════ CUSTOMER DETAILS MODAL ═══════ -->
 <div class="modal-overlay" id="modalDetails">
-  <div class="modal">
+  <div class="modal glass-modal">
     <div class="modal__header">
-      <span class="modal__title">📋 Customer Details</span>
-      <button class="modal__close" onclick="closeDetailsModal()">✕</button>
+      <div class="modal__title">
+        <span class="icon">👤</span> Customer Profile
+      </div>
+      <button class="modal__close" onclick="closeDetailsModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
     </div>
 
-    <!-- Dots visualizer -->
-    <div class="dots-section" id="dotsContainer"></div>
+    <div class="modal__body">
+      <div class="profile-summary">
+        <div class="profile-number" id="profileMobileDisp">+91 XXXXX XXXXX</div>
+      </div>
 
-    <!-- Reward emojis -->
-    <div style="margin:.5rem 0;">
-      <span style="font-size:.78rem;font-weight:600;color:var(--text-secondary);">🎁 Rewards Claimed:</span>
-      <div class="reward-emojis" id="rewardEmojis"></div>
-    </div>
+      <!-- Eligibility -->
+      <div id="eligibilityBanner"></div>
 
-    <!-- Eligibility -->
-    <div id="eligibilityBanner"></div>
+      <div class="loyalty-progress-section">
+        <div class="section-title">Loyalty Progress</div>
+        <!-- Dots visualizer -->
+        <div class="dots-section" id="dotsContainer"></div>
+      </div>
 
-    <!-- Past entries (manual toggle) -->
-    <button class="btn btn--outline btn--sm mt-1" id="btnShowDetails" onclick="loadPastEntries()">📄 Show Details</button>
-    <div class="hidden mt-1" id="pastEntriesWrap">
-      <div style="overflow-x:auto;">
-        <table class="entry-table" id="pastEntriesTable">
-          <thead>
-            <tr><th>#</th><th>Mobile</th><th>Amount</th><th>Date</th><th>Time</th><th>Message</th></tr>
-          </thead>
-          <tbody id="pastEntriesBody"></tbody>
-        </table>
+      <div class="rewards-history-section">
+        <div class="section-title flex-between">
+          <span>Rewards Claimed</span>
+          <span class="badge" id="rewardCountBadge">0</span>
+        </div>
+        <div class="reward-emojis" id="rewardEmojis"></div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Past entries (manual toggle) -->
+      <button class="btn btn--secondary btn--block" id="btnShowDetails" onclick="loadPastEntries()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        View Transaction History
+      </button>
+      
+      <div class="hidden mt-2" id="pastEntriesWrap">
+        <div class="table-responsive glass-table-wrap">
+          <table class="entry-table" id="pastEntriesTable">
+            <thead>
+              <tr><th>#</th><th>Date & Time</th><th>Amount</th><th>Message</th></tr>
+            </thead>
+            <tbody id="pastEntriesBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ═══════ ADMIN SECTION ═══════ -->
-<section class="page-section wide" id="sectionAdmin">
-
-  <!-- Login Gate -->
-  <div id="adminLoginWrap">
-    <div class="card login-card">
-      <div class="card__title">🔐 Admin Login</div>
-      <div class="form-group">
-        <label class="form-label" for="adminUser">Username</label>
-        <input class="form-input" id="adminUser" type="text" placeholder="Username" />
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="adminPass">Password</label>
-        <input class="form-input" id="adminPass" type="password" placeholder="Password" />
-      </div>
-      <div class="error-msg" id="errLogin">Invalid credentials.</div>
-      <button class="btn btn--primary btn--block mt-1" id="btnLogin" onclick="handleAdminLogin()">Login</button>
-    </div>
-  </div>
-
-  <!-- Dashboard (hidden until login) -->
-  <div class="hidden" id="adminDashboard">
-    <div class="stats-grid" id="statsGrid"></div>
-
-    <!-- Today toggle -->
-    <div class="chart-card">
-      <div class="chart-card__title">📅 Today's Summary</div>
-      <div class="toggle-row" id="todayToggle">
-        <button class="toggle-btn active" onclick="setTodayView('entries', this)">Entries</button>
-        <button class="toggle-btn" onclick="setTodayView('amount', this)">Amount</button>
-      </div>
-      <div id="todayValue" style="font-size:1.8rem;font-weight:800;color:var(--brand-primary);"></div>
-    </div>
-
-    <!-- Charts row -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;">
-      <!-- Repeat vs New -->
-      <div class="chart-card">
-        <div class="chart-card__title">👥 Repeat vs New Customers</div>
-        <div class="chart-wrap"><canvas id="chartRepeatNew"></canvas></div>
-      </div>
-
-      <!-- Top Repeat Customers -->
-      <div class="chart-card">
-        <div class="chart-card__title">🏆 Top Repeat Customers</div>
-        <ul class="top-list" id="topCustomersList"></ul>
-      </div>
-    </div>
-
-    <!-- Heatmap -->
-    <div class="chart-card">
-      <div class="chart-card__title">🔥 Day-Hour Heatmap</div>
-      <div class="toggle-row" id="heatmapToggle">
-        <button class="toggle-btn active" onclick="setHeatmapType('entries', this)">Entries</button>
-        <button class="toggle-btn" onclick="setHeatmapType('amount', this)">Amount</button>
-      </div>
-      <button class="btn btn--outline btn--sm mb-1" id="btnCalcHeatmap" onclick="calculateHeatmap()">🔄 Calculate Heatmap</button>
-      <div id="heatmapContainer"></div>
-    </div>
-
-    <!-- Time Between Visits -->
-    <div class="chart-card">
-      <div class="chart-card__title">⏱️ Time Between Visits</div>
-      <button class="btn btn--outline btn--sm mb-1" id="btnCalcTBV" onclick="calculateTimeBetweenVisits()">🔄 Calculate</button>
-      <div id="tbvContainer" class="hidden">
-        <div class="stats-grid" id="tbvStats"></div>
-        <div class="chart-wrap"><canvas id="chartTBV"></canvas></div>
-      </div>
-    </div>
-  </div>
-</section>
-
 <script src="script.js"></script>
+<script>
+  // Add today's date to dashboard
+  document.addEventListener('DOMContentLoaded', () => {
+    const d = new Date();
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const el = document.getElementById('currentDateBadge');
+    if(el) el.textContent = d.toLocaleDateString('en-IN', options);
+    
+    // Auto-update mobile display in modal when opened
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.target.classList.contains('open') && document.getElementById('dispMobile').value) {
+          document.getElementById('profileMobileDisp').textContent = '+91 ' + document.getElementById('dispMobile').value;
+        }
+      });
+    });
+    observer.observe(document.getElementById('modalDetails'), { attributes: true, attributeFilter: ['class'] });
+  });
+</script>
 </body>
 </html>
