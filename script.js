@@ -5,7 +5,7 @@
 
 // ──── CONFIGURATION ────
 // ⚠️  PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE:
-const API_URL = 'https://script.google.com/macros/s/AKfycby2RXrQOKkXQ3dgWRz_hCJMl9Fi9ZFxjm_hD6vuwCdh6KHPbRxCXfMsmKeK6JE1LunG-Q/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzyyi_faies09WyJOrGJaKxUDCiN33VFVgGuaa9ZP6PlLDrHvMkjR8sX7ffaFomVty3/exec';
 
 // Runtime cache
 let APP_CONFIG = null;       // { minAmount, cycle, rewardValue }
@@ -16,24 +16,31 @@ let ADMIN_AUTHENTICATED = false;
 
 // ──── HELPERS ────
 
-/** IST now (UTC +5:30) */
-function istNow() {
-  const utc = new Date();
-  return new Date(utc.getTime() + (5.5 * 60 * 60 * 1000));
-}
+/**
+ * IST date/time helpers — using the Intl API.
+ *
+ * The old approach manually added +5:30 ms to new Date(). That double-counts
+ * the offset when the browser is already in IST, and gives wrong results in
+ * every other timezone. The Intl API is the correct, locale-agnostic way to
+ * express a moment in a specific IANA timezone.
+ */
 
+/** Returns the current date as "YYYY-MM-DD" in IST. */
 function istDateStr() {
-  const d = istNow();
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
+  // en-CA locale natively formats dates as YYYY-MM-DD.
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
+/** Returns the current time as "HH:MM:SS" in IST. */
 function istTimeStr() {
-  const d = istNow();
-  return String(d.getHours()).padStart(2, '0') + ':' +
-    String(d.getMinutes()).padStart(2, '0') + ':' +
-    String(d.getSeconds()).padStart(2, '0');
+  // en-GB with hour12:false produces 24-hour HH:MM:SS with no AM/PM suffix.
+  return new Date().toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour12:  false,
+    hour:    '2-digit',
+    minute:  '2-digit',
+    second:  '2-digit'
+  });
 }
 
 /** API call helper */
@@ -117,15 +124,16 @@ loadConfig();
 // ══════════════════════════════════════
 
 async function handleAddEntry() {
-  const mobile = document.getElementById('inputMobile').value.trim();
+  const mobileInput = document.getElementById('inputMobile');
+  const mobile = mobileInput.value.trim();
   hideErr('errMobile');
 
   if (!/^\d{10}$/.test(mobile)) {
     showErr('errMobile');
-    document.getElementById('inputMobile').classList.add('error');
-    return;
+    mobileInput.classList.add('error');
+    return;  // keep field intact so user can correct the typo
   }
-  document.getElementById('inputMobile').classList.remove('error');
+  mobileInput.classList.remove('error');
 
   // Disable button while loading
   const btn = document.getElementById('btnAddEntry');
@@ -141,13 +149,15 @@ async function handleAddEntry() {
     const todayDate = istDateStr();
     if (cust.found && cust.lastVisitDate === todayDate) {
       toast('Entry already added today for this number. Try again tomorrow.', 'error');
+      mobileInput.value = '';          // clear so next customer can be entered
       btn.disabled = false;
       btn.innerHTML = '➕ Add Entry';
       return;
     }
 
-    // Show entry form
+    // Show entry form and clear the mobile input for the next customer
     openEntryForm(mobile, cust);
+    mobileInput.value = '';            // clear after number has been captured into the form
 
   } catch (e) {
     toast('Error: ' + e.message, 'error');
@@ -591,16 +601,11 @@ function renderTopCustomers(list) {
     '<li>' +
     '<div style="display:flex;align-items:center;">' +
     '<span class="top-list__rank">' + (i + 1) + '</span>' +
-    '<span>' + maskMobile(c.mobile) + '</span>' +
+    '<span>' + c.mobile + '</span>' +
     '</div>' +
     '<span style="font-weight:700;color:var(--brand-primary);">' + c.entries + ' visits</span>' +
     '</li>'
   ).join('');
-}
-
-function maskMobile(m) {
-  if (!m || m.length < 10) return m;
-  return m.substring(0, 2) + '••••' + m.substring(6);
 }
 
 // ──── Heatmap ────
