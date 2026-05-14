@@ -14,6 +14,9 @@ let LAST_ENTRY_RESULT = null;
 let ADMIN_DATA = null;
 let ADMIN_AUTHENTICATED = false;
 
+// ──── HARDCODED WHATSAPP TEMPLATE (removes Sheet3 dependency) ────
+const WHATSAPP_TEMPLATE = "https://api.whatsapp.com/send?phone=91<number>&text=*Perfect%20Pizza%20Point*%F0%9F%8D%95%0A%0A%F0%9F%93%8A%20Current%20visit%20count%20%3A%20<completedvisit>%0A%F0%9F%92%B0%C2%A0%20Billing%20Amount%20%3D%20%E2%82%B9<amount>%0A%E2%9C%89%EF%B8%8F%20<message>%0A%0A%F0%9F%94%97%20Useful%20links%3A%0A%E2%9D%A4%EF%B8%8F%20Insta%20page%20%3A%20https%3A%2F%2Finstagram.com%2Fperfect_pizza_point_p3%0A%F0%9F%8D%95%20Zomato%20%3A%20https%3A%2F%2Fzomato.onelink.me%2Fxqzv%2F0o9285p4%0A%F0%9F%8D%94%20Swiggy%20%3A%20https%3A%2F%2Fwww.swiggy.com%2Fmenu%2F765590%0A%F0%9F%A4%9D%20Loyalty%20%3A%20<loyality>%0A%E2%98%8E%EF%B8%8F%20Phone%20No%3A%20%2B918319798869";
+
 // ──── HELPERS ────
 
 /**
@@ -135,35 +138,53 @@ async function handleAddEntry() {
   }
   mobileInput.classList.remove('error');
 
-  // Disable button while loading
   const btn = document.getElementById('btnAddEntry');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Checking…';
 
+  // ── Instantly open the entry form with placeholder customer data ──
+  CURRENT_CUSTOMER = {
+    found: false, mobile,
+    totalEntries: 0, rewardsClaimed: 0,
+    eligible: false, lastVisitDate: ''
+  };
+  openEntryForm(mobile, CURRENT_CUSTOMER);
+  mobileInput.value = '';
+
+  btn.disabled = false;
+  btn.innerHTML = '➕ Add Entry';
+
+  // ── Background: run the original duplicate-check against Google Sheets ──
   try {
-    // Fetch Sheet1 data only
     const cust = await api({ action: 'getCustomer', mobile });
     CURRENT_CUSTOMER = cust;
 
-    // Check last visit date
+    // If entry already exists for today → block saving
     const todayDate = istDateStr();
     if (cust.found && cust.lastVisitDate === todayDate) {
       toast('Entry already added today for this number. Try again tomorrow.', 'error');
-      mobileInput.value = '';          // clear so next customer can be entered
-      btn.disabled = false;
-      btn.innerHTML = '➕ Add Entry';
+      const btnSave = document.getElementById('btnSaveEntry');
+      btnSave.disabled = true;
+      btnSave.innerHTML = '🚫 Already Added';
       return;
     }
 
-    // Show entry form and clear the mobile input for the next customer
-    openEntryForm(mobile, cust);
-    mobileInput.value = '';            // clear after number has been captured into the form
+    // If customer needs to claim reward first → swap buttons
+    const cycle = APP_CONFIG ? APP_CONFIG.cycle : 10;
+    const needsClaim = cust.found && cust.eligible &&
+      cust.rewardsClaimed < cust.totalEntries / cycle;
 
+    if (needsClaim) {
+      const btnSave = document.getElementById('btnSaveEntry');
+      const btnClaim = document.getElementById('btnClaimForce');
+      btnSave.style.display = 'none';
+      btnClaim.style.display = '';
+      toast('🎁 Customer must claim reward before new entry!', 'info');
+      show('rowDetailsBtn');
+    }
   } catch (e) {
-    toast('Error: ' + e.message, 'error');
+    console.error('Background duplicate check failed', e);
   }
-  btn.disabled = false;
-  btn.innerHTML = '➕ Add Entry';
 }
 
 function openEntryForm(mobile, cust) {
@@ -171,7 +192,7 @@ function openEntryForm(mobile, cust) {
   document.getElementById('dispDate').value = istDateStr();
   document.getElementById('dispTime').value = istTimeStr();
   document.getElementById('inputAmount').value = '';
-  document.getElementById('inputMessage').value = '';
+  document.getElementById('inputMessage').value = 'Thank You, Visit Again';  // default message
   hideErr('errAmount');
   hide('rowWhatsapp');
   hide('rowDetailsBtn');
@@ -185,13 +206,17 @@ function openEntryForm(mobile, cust) {
   const btnSave = document.getElementById('btnSaveEntry');
   const btnClaim = document.getElementById('btnClaimForce');
 
+  // ── Reset Save button for every new entry (fix #5) ──
+  btnSave.disabled = false;
+  btnSave.innerHTML = '💾 Save Entry';
+  btnSave.style.display = '';
+
   if (needsClaim) {
     btnSave.style.display = 'none';
     btnClaim.style.display = '';
     toast('🎁 Customer must claim reward before new entry!', 'info');
     show('rowDetailsBtn');
   } else {
-    btnSave.style.display = '';
     btnClaim.style.display = 'none';
   }
 
@@ -222,15 +247,38 @@ async function handleSaveEntry() {
   document.getElementById('inputAmount').classList.remove('error');
 
   const btn = document.getElementById('btnSaveEntry');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Saving…';
 
+  // ── Instant UI update — no waiting for the server ──
+  btn.disabled = true;
+  btn.innerHTML = '✔ Saved';
+
+  // Compute optimistic entry data so the UI can render immediately
+  const cycle = APP_CONFIG ? APP_CONFIG.cycle : 10;
+  const estimatedTotal = CURRENT_CUSTOMER && CURRENT_CUSTOMER.found
+    ? CURRENT_CUSTOMER.totalEntries + 1
+    : 1;
+  const optimisticResult = {
+    totalEntries: estimatedTotal,
+    rewardsClaimed: CURRENT_CUSTOMER ? (CURRENT_CUSTOMER.rewardsClaimed || 0) : 0,
+    eligible: false,
+    cycle: cycle,
+    index: estimatedTotal
+  };
+
+  toast('✅ Entry saved! Visit #' + optimisticResult.index, 'success');
+  buildWhatsAppLink(optimisticResult, mobile, amount, message);
+  show('rowWhatsapp');
+  show('rowDetailsBtn');
+
+  // ── Background: persist to Google Sheets (original flow) ──
   try {
     const result = await api({ action: 'addEntry', mobile, amount, date, time, message });
     if (result.error) {
       toast(result.error, 'error');
       btn.disabled = false;
       btn.innerHTML = '💾 Save Entry';
+      hide('rowWhatsapp');
+      hide('rowDetailsBtn');
       return;
     }
 
@@ -243,25 +291,17 @@ async function handleSaveEntry() {
       lastVisitDate: date
     };
 
-    toast('✅ Entry saved! Visit #' + result.index, 'success');
-
-    // Disable save after success
-    btn.disabled = true;
-    btn.innerHTML = '✔ Saved';
-
-    // Build WhatsApp link
+    // Refresh WhatsApp link with actual server data
     buildWhatsAppLink(result, mobile, amount, message);
-    show('rowWhatsapp');
-    show('rowDetailsBtn');
 
     // If now eligible, show claim button
-    const cycle = result.cycle || (APP_CONFIG ? APP_CONFIG.cycle : 10);
-    if (result.eligible && result.rewardsClaimed < result.totalEntries / cycle) {
+    const actualCycle = result.cycle || cycle;
+    if (result.eligible && result.rewardsClaimed < result.totalEntries / actualCycle) {
       document.getElementById('btnClaimForce').style.display = '';
     }
 
   } catch (e) {
-    toast('Error: ' + e.message, 'error');
+    toast('Error saving: ' + e.message, 'error');
     btn.disabled = false;
     btn.innerHTML = '💾 Save Entry';
   }
@@ -269,7 +309,7 @@ async function handleSaveEntry() {
 
 // ──── WHATSAPP LINK ────
 function buildWhatsAppLink(result, mobile, amount, message) {
-  const template = result.whatsappTemplate || '';
+  const template = WHATSAPP_TEMPLATE;
   const cycle    = result.cycle || (APP_CONFIG ? APP_CONFIG.cycle : 10);
   const total    = result.totalEntries;
 
