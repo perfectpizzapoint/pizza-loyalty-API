@@ -14,6 +14,9 @@ let LAST_ENTRY_RESULT = null;
 let ADMIN_DATA = null;
 let ADMIN_AUTHENTICATED = false;
 
+// Hardcoded WhatsApp Click-to-Chat template (no longer fetched from Sheet3)
+const WHATSAPP_TEMPLATE = 'https://api.whatsapp.com/send?phone=91<number>&text=*Perfect%20Pizza%20Point*%F0%9F%8D%95%0A%0A%F0%9F%93%8A%20Current%20visit%20count%20%3A%20<completedvisit>%0A%F0%9F%92%B0%C2%A0%20Billing%20Amount%20%3D%20%E2%82%B9<amount>%0A%E2%9C%89%EF%B8%8F%20<message>%0A%0A%F0%9F%94%97%20Useful%20links%3A%0A%E2%9D%A4%EF%B8%8F%20Insta%20page%20%3A%20https%3A%2F%2Finstagram.com%2Fperfect_pizza_point_p3%0A%F0%9F%8D%95%20Zomato%20%3A%20https%3A%2F%2Fzomato.onelink.me%2Fxqzv%2F0o9285p4%0A%F0%9F%8D%94%20Swiggy%20%3A%20https%3A%2F%2Fwww.swiggy.com%2Fmenu%2F765590%0A%F0%9F%A4%9D%20Loyalty%20%3A%20<loyality>%0A%E2%98%8E%EF%B8%8F%20Phone%20No%3A%20%2B918319798869';
+
 // ──── HELPERS ────
 
 /**
@@ -171,7 +174,7 @@ function openEntryForm(mobile, cust) {
   document.getElementById('dispDate').value = istDateStr();
   document.getElementById('dispTime').value = istTimeStr();
   document.getElementById('inputAmount').value = '';
-  document.getElementById('inputMessage').value = '';
+  document.getElementById('inputMessage').value = 'Thank You, Visit Again';
   hideErr('errAmount');
   hide('rowWhatsapp');
   hide('rowDetailsBtn');
@@ -223,53 +226,82 @@ async function handleSaveEntry() {
 
   const btn = document.getElementById('btnSaveEntry');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Saving…';
 
-  try {
-    const result = await api({ action: 'addEntry', mobile, amount, date, time, message });
-    if (result.error) {
-      toast(result.error, 'error');
+  // ── Optimistic UI: predict result and update instantly ──
+  const prevEntries = CURRENT_CUSTOMER && CURRENT_CUSTOMER.found ? CURRENT_CUSTOMER.totalEntries : 0;
+  const prevClaimed = CURRENT_CUSTOMER && CURRENT_CUSTOMER.found ? CURRENT_CUSTOMER.rewardsClaimed : 0;
+  const newTotal = prevEntries + 1;
+  const cycle = APP_CONFIG ? APP_CONFIG.cycle : 10;
+  const rewardValue = APP_CONFIG ? APP_CONFIG.rewardValue : 150;
+  const isEligible = (newTotal > 0) && (newTotal % cycle === 0);
+
+  const predictedResult = {
+    success: true, mobile, totalEntries: newTotal,
+    rewardsClaimed: prevClaimed, eligible: isEligible,
+    index: newTotal, cycle: cycle, rewardValue: rewardValue
+  };
+
+  // Instantly update UI
+  LAST_ENTRY_RESULT = predictedResult;
+  CURRENT_CUSTOMER = {
+    found: true, mobile,
+    totalEntries: newTotal,
+    rewardsClaimed: prevClaimed,
+    eligible: isEligible,
+    lastVisitDate: date
+  };
+
+  toast('✅ Entry saved! Visit #' + newTotal, 'success');
+  btn.disabled = true;
+  btn.innerHTML = '✔ Saved';
+
+  buildWhatsAppLink(predictedResult, mobile, amount, message);
+  show('rowWhatsapp');
+  show('rowDetailsBtn');
+
+  if (isEligible && prevClaimed < newTotal / cycle) {
+    document.getElementById('btnClaimForce').style.display = '';
+  }
+
+  // ── Background: actual Google Sheets update (fire-and-forget) ──
+  api({ action: 'addEntry', mobile, amount, date, time, message })
+    .then(result => {
+      if (result.error) {
+        // Revert optimistic UI on server error
+        toast('⚠️ Save failed: ' + result.error, 'error');
+        btn.disabled = false;
+        btn.innerHTML = '💾 Save Entry';
+        LAST_ENTRY_RESULT = null;
+        hide('rowWhatsapp');
+        hide('rowDetailsBtn');
+        // Restore previous customer state
+        if (prevEntries > 0) {
+          CURRENT_CUSTOMER = { found: true, mobile, totalEntries: prevEntries, rewardsClaimed: prevClaimed, eligible: false, lastVisitDate: '' };
+        } else {
+          CURRENT_CUSTOMER = { found: false, mobile };
+        }
+      } else {
+        // Silently reconcile with actual server data
+        LAST_ENTRY_RESULT = result;
+        CURRENT_CUSTOMER = {
+          found: true, mobile,
+          totalEntries: result.totalEntries,
+          rewardsClaimed: result.rewardsClaimed,
+          eligible: result.eligible,
+          lastVisitDate: date
+        };
+      }
+    })
+    .catch(e => {
+      toast('⚠️ Background save error: ' + e.message, 'error');
       btn.disabled = false;
       btn.innerHTML = '💾 Save Entry';
-      return;
-    }
-
-    LAST_ENTRY_RESULT = result;
-    CURRENT_CUSTOMER = {
-      found: true, mobile,
-      totalEntries: result.totalEntries,
-      rewardsClaimed: result.rewardsClaimed,
-      eligible: result.eligible,
-      lastVisitDate: date
-    };
-
-    toast('✅ Entry saved! Visit #' + result.index, 'success');
-
-    // Disable save after success
-    btn.disabled = true;
-    btn.innerHTML = '✔ Saved';
-
-    // Build WhatsApp link
-    buildWhatsAppLink(result, mobile, amount, message);
-    show('rowWhatsapp');
-    show('rowDetailsBtn');
-
-    // If now eligible, show claim button
-    const cycle = result.cycle || (APP_CONFIG ? APP_CONFIG.cycle : 10);
-    if (result.eligible && result.rewardsClaimed < result.totalEntries / cycle) {
-      document.getElementById('btnClaimForce').style.display = '';
-    }
-
-  } catch (e) {
-    toast('Error: ' + e.message, 'error');
-    btn.disabled = false;
-    btn.innerHTML = '💾 Save Entry';
-  }
+    });
 }
 
 // ──── WHATSAPP LINK ────
 function buildWhatsAppLink(result, mobile, amount, message) {
-  const template = result.whatsappTemplate || '';
+  const template = WHATSAPP_TEMPLATE;
   const cycle    = result.cycle || (APP_CONFIG ? APP_CONFIG.cycle : 10);
   const total    = result.totalEntries;
 
