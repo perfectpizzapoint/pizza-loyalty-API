@@ -92,12 +92,16 @@ function toggleTheme() {
 function showSection(name) {
   document.getElementById('sectionHome').classList.remove('active');
   document.getElementById('sectionAdmin').classList.remove('active');
+  document.getElementById('sectionPos').classList.remove('active');
   document.getElementById('navHome').classList.remove('active');
   document.getElementById('navAdmin').classList.remove('active');
+  document.getElementById('navPos').classList.remove('active');
 
+  let activeBtn;
   if (name === 'admin') {
     document.getElementById('sectionAdmin').classList.add('active');
-    document.getElementById('navAdmin').classList.add('active');
+    activeBtn = document.getElementById('navAdmin');
+    activeBtn.classList.add('active');
     // Always require re-auth when opening admin
     ADMIN_AUTHENTICATED = false;
     show('adminLoginWrap');
@@ -105,11 +109,42 @@ function showSection(name) {
     document.getElementById('adminUser').value = '';
     document.getElementById('adminPass').value = '';
     hideErr('errLogin');
+  } else if (name === 'pos') {
+    document.getElementById('sectionPos').classList.add('active');
+    activeBtn = document.getElementById('navPos');
+    activeBtn.classList.add('active');
+    initPos();
   } else {
     document.getElementById('sectionHome').classList.add('active');
-    document.getElementById('navHome').classList.add('active');
+    activeBtn = document.getElementById('navHome');
+    activeBtn.classList.add('active');
   }
+  
+  updateNavIndicator(activeBtn);
 }
+
+function updateNavIndicator(btn) {
+  if (!btn) return;
+  const indicator = document.getElementById('navIndicator');
+  const dock = document.getElementById('navDock');
+  if (!indicator || !dock) return;
+  
+  const dockRect = dock.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
+  
+  indicator.style.width = btnRect.width + 'px';
+  indicator.style.left = (btnRect.left - dockRect.left) + 'px';
+}
+
+// Initial positioning and resize listener for the animated dock indicator
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    updateNavIndicator(document.querySelector('.nav-btn.active'));
+  }, 100);
+  window.addEventListener('resize', () => {
+    updateNavIndicator(document.querySelector('.nav-btn.active'));
+  });
+});
 
 // ──── FETCH CONFIG ON LOAD ────
 async function loadConfig() {
@@ -162,10 +197,14 @@ async function handleAddEntry() {
     // If entry already exists for today → block saving
     const todayDate = istDateStr();
     if (cust.found && cust.lastVisitDate === todayDate) {
-      toast('Entry already added today for this number. Try again tomorrow.', 'error');
+      toast('Entry already added today. You can generate a receipt without adding an entry.', 'info');
       const btnSave = document.getElementById('btnSaveEntry');
       btnSave.disabled = true;
-      btnSave.innerHTML = '🚫 Already Added';
+      btnSave.innerHTML = '🚫 Already Added Today';
+      
+      const btnReceipt = document.getElementById('btnReceiptOnly');
+      btnReceipt.style.display = ''; // Show Receipt Only button
+      
       return;
     }
 
@@ -191,7 +230,14 @@ function openEntryForm(mobile, cust) {
   document.getElementById('dispMobile').value = mobile;
   document.getElementById('dispDate').value = istDateStr();
   document.getElementById('dispTime').value = istTimeStr();
-  document.getElementById('inputAmount').value = '';
+  
+  if (window.PENDING_POS_TOTAL) {
+    document.getElementById('inputAmount').value = window.PENDING_POS_TOTAL;
+    window.PENDING_POS_TOTAL = null;
+  } else {
+    document.getElementById('inputAmount').value = '';
+  }
+  
   document.getElementById('inputMessage').value = 'Thank You, Visit Again';  // default message
   hideErr('errAmount');
   hide('rowWhatsapp');
@@ -210,6 +256,9 @@ function openEntryForm(mobile, cust) {
   btnSave.disabled = false;
   btnSave.innerHTML = '💾 Save Entry';
   btnSave.style.display = '';
+  
+  const btnReceipt = document.getElementById('btnReceiptOnly');
+  btnReceipt.style.display = 'none';
 
   if (needsClaim) {
     btnSave.style.display = 'none';
@@ -305,6 +354,27 @@ async function handleSaveEntry() {
     btn.disabled = false;
     btn.innerHTML = '💾 Save Entry';
   }
+}
+
+// ──── RECEIPT ONLY (NO DB SAVE) ────
+function handleReceiptOnly() {
+  const mobile = document.getElementById('dispMobile').value;
+  const amount = parseInt(document.getElementById('inputAmount').value, 10);
+  const message = document.getElementById('inputMessage').value.trim();
+  const minAmt = APP_CONFIG ? APP_CONFIG.minAmount : 100;
+
+  hideErr('errAmount');
+  if (isNaN(amount) || amount < minAmt) {
+    showErr('errAmount');
+    document.getElementById('inputAmount').classList.add('error');
+    return;
+  }
+  document.getElementById('inputAmount').classList.remove('error');
+
+  // Build the WhatsApp link using the current customer's data, without adding a new entry
+  buildWhatsAppLink(CURRENT_CUSTOMER, mobile, amount, message);
+  show('rowWhatsapp');
+  show('rowDetailsBtn');
 }
 
 // ──── WHATSAPP LINK ────
@@ -768,3 +838,395 @@ async function calculateTimeBetweenVisits() {
   btn.disabled = false;
   btn.innerHTML = '🔄 Calculate';
 }
+
+// ══════════════════════════════════════
+//  POS SYSTEM LOGIC
+// ══════════════════════════════════════
+
+let POS_STATE = {
+  tableCount: 0,
+  currentTableId: null,
+  currentCategoryIndex: null,
+  categories: [],
+  dishes: [], // dishes for current category
+  tableOrders: JSON.parse(localStorage.getItem('ppp_tableOrders') || '{}')
+};
+
+async function initPos() {
+  if (POS_STATE.tableCount === 0) {
+    try {
+      const res = await api({ action: 'getTableCount' });
+      POS_STATE.tableCount = res.count || 0;
+    } catch (e) {
+      console.error('Failed to load table count', e);
+    }
+  }
+  showPosTables();
+}
+
+function showPosTables() {
+  hide('posCategoriesView');
+  hide('posDishesView');
+  show('posTablesView');
+  
+  const grid = document.getElementById('posTablesGrid');
+  grid.innerHTML = '';
+  
+  if (POS_STATE.tableCount === 0) {
+    grid.innerHTML = '<p style="grid-column:1/-1; text-align:center;">No tables configured. Please configure in Admin.</p>';
+    return;
+  }
+  
+  for (let i = 1; i <= POS_STATE.tableCount; i++) {
+    const card = document.createElement('div');
+    card.className = 'pos-table-card';
+    card.onclick = () => openPosTable(i);
+    
+    // show an indicator if the table has an active order
+    const hasOrder = POS_STATE.tableOrders[i] && Object.values(POS_STATE.tableOrders[i]).some(d => d.qty > 0);
+    const indicator = hasOrder ? ' 🔵' : '';
+    
+    card.innerHTML = `
+      <div class="table-icon">🪑</div>
+      <div class="table-name">Table ${i}${indicator}</div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+async function openPosTable(tableId) {
+  POS_STATE.currentTableId = tableId;
+  if (!POS_STATE.tableOrders[tableId]) {
+    POS_STATE.tableOrders[tableId] = {};
+  }
+  
+  hide('posTablesView');
+  show('posCategoriesView');
+  
+  if (POS_STATE.categories.length === 0) {
+    try {
+      const res = await api({ action: 'getCategories' });
+      POS_STATE.categories = res.categories || [];
+    } catch (e) {
+      toast('Failed to load categories', 'error');
+    }
+  }
+  
+  const grid = document.getElementById('posCategoriesGrid');
+  grid.innerHTML = '';
+  
+  if (POS_STATE.categories.length === 0) {
+    grid.innerHTML = '<p style="grid-column:1/-1; text-align:center;">No categories found.</p>';
+    return;
+  }
+  
+  POS_STATE.categories.forEach(cat => {
+    const card = document.createElement('div');
+    card.className = 'pos-category-card';
+    card.textContent = cat.name;
+    card.onclick = () => openPosCategory(cat.index);
+    grid.appendChild(card);
+  });
+}
+
+async function openPosCategory(catIndex) {
+  POS_STATE.currentCategoryIndex = catIndex;
+  hide('posCategoriesView');
+  show('posDishesView');
+  
+  const grid = document.getElementById('posDishesGrid');
+  grid.innerHTML = '<p style="grid-column:1/-1; text-align:center;"><span class="spinner" style="border-top-color:var(--brand-primary)"></span> Loading dishes...</p>';
+  
+  try {
+    const res = await api({ action: 'getDishes', parentIndex: catIndex });
+    POS_STATE.dishes = res.dishes || [];
+    renderPosDishes();
+  } catch (e) {
+    toast('Failed to load dishes', 'error');
+    grid.innerHTML = '';
+  }
+}
+
+function showPosCategories() {
+  hide('posDishesView');
+  show('posCategoriesView');
+}
+
+function renderPosDishes() {
+  const grid = document.getElementById('posDishesGrid');
+  grid.innerHTML = '';
+  
+  if (POS_STATE.dishes.length === 0) {
+    grid.innerHTML = '<p style="grid-column:1/-1; text-align:center;">No dishes in this category.</p>';
+    return;
+  }
+  
+  const order = POS_STATE.tableOrders[POS_STATE.currentTableId];
+  
+  POS_STATE.dishes.forEach(dish => {
+    const dishKey = `dish-${dish.rowIndex}`; // Using row index as unique ID
+    const currentQty = order[dishKey] ? order[dishKey].qty : 0;
+    
+    const card = document.createElement('div');
+    card.className = 'pos-dish-card';
+    card.innerHTML = `
+      <div>
+        <div class="pos-dish-name">${dish.name}</div>
+        <div class="pos-dish-price">₹${dish.amount}</div>
+      </div>
+      <div class="qty-selector">
+        <button class="qty-btn" onclick="updateDishQty('${dishKey}', '${dish.name}', ${dish.amount}, -1)">-</button>
+        <div class="qty-display" id="qty-${dishKey}">${currentQty}</div>
+        <button class="qty-btn" onclick="updateDishQty('${dishKey}', '${dish.name}', ${dish.amount}, 1)">+</button>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function updateDishQty(dishKey, name, price, delta) {
+  const order = POS_STATE.tableOrders[POS_STATE.currentTableId];
+  
+  if (!order[dishKey]) {
+    order[dishKey] = { name, price, qty: 0 };
+  }
+  
+  let newQty = order[dishKey].qty + delta;
+  if (newQty < 0) newQty = 0;
+  
+  order[dishKey].qty = newQty;
+  document.getElementById(`qty-${dishKey}`).textContent = newQty;
+  
+  localStorage.setItem('ppp_tableOrders', JSON.stringify(POS_STATE.tableOrders));
+}
+
+function generateBill() {
+  const order = POS_STATE.tableOrders[POS_STATE.currentTableId];
+  if (!order || Object.keys(order).length === 0) {
+    return toast('No dishes added to the table.', 'error');
+  }
+  
+  let grandTotal = 0;
+  const tbody = document.getElementById('billTableBody');
+  tbody.innerHTML = '';
+  
+  let hasItems = false;
+  Object.keys(order).forEach(key => {
+    const dish = order[key];
+    if (dish.qty > 0) {
+      hasItems = true;
+      const total = dish.qty * dish.price;
+      grandTotal += total;
+      
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${dish.name}</td>
+        <td style="text-align: center;">${dish.qty}</td>
+        <td>₹${dish.price}</td>
+        <td style="font-weight: 700;">₹${total}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  });
+  
+  if (!hasItems) {
+    return toast('No dishes added to the table.', 'error');
+  }
+  
+  document.getElementById('billGrandTotal').textContent = '₹' + grandTotal;
+  POS_STATE.currentBillTotal = grandTotal;
+  
+  document.getElementById('modalBill').classList.add('open');
+}
+
+function closeBillModal() {
+  document.getElementById('modalBill').classList.remove('open');
+}
+
+function proceedToCheckout() {
+  closeBillModal();
+  
+  // Save total for loyalty form pre-fill
+  window.PENDING_POS_TOTAL = POS_STATE.currentBillTotal;
+  
+  // Clear the table order
+  POS_STATE.tableOrders[POS_STATE.currentTableId] = {};
+  localStorage.setItem('ppp_tableOrders', JSON.stringify(POS_STATE.tableOrders));
+  
+  // Switch to home section (Loyalty)
+  showSection('home');
+  
+  // Highlight the mobile input for the user
+  document.getElementById('inputMobile').focus();
+  toast('Bill generated! Enter customer mobile to apply loyalty.', 'success');
+}
+
+// ══════════════════════════════════════
+//  POS ADMIN LOGIC
+// ══════════════════════════════════════
+
+async function saveAdminTableCount() {
+  const count = parseInt(document.getElementById('adminTableCount').value, 10);
+  if (isNaN(count) || count < 1) return toast('Invalid table count', 'error');
+  
+  try {
+    await api({ action: 'saveTableCount', count });
+    POS_STATE.tableCount = count;
+    toast('Table count saved', 'success');
+  } catch(e) {
+    toast('Failed to save table count', 'error');
+  }
+}
+
+async function loadAdminCategories() {
+  try {
+    const res = await api({ action: 'getCategories' });
+    const tbody = document.getElementById('adminCategoriesTable');
+    const select = document.getElementById('adminDishCategorySelect');
+    tbody.innerHTML = '';
+    select.innerHTML = '<option value="">-- Select Category --</option>';
+    
+    if (res.categories) {
+      res.categories.forEach(cat => {
+        // Table
+        tbody.innerHTML += `
+          <tr>
+            <td>${cat.index}</td>
+            <td>${cat.name}</td>
+            <td>
+              <button class="btn btn--sm btn--secondary" onclick="editAdminCategory(${cat.index}, '${cat.name}')">Edit</button>
+              <button class="btn btn--sm btn--danger ml-1" onclick="deleteAdminCategory(${cat.index})">Delete</button>
+            </td>
+          </tr>
+        `;
+        // Dropdown
+        select.innerHTML += '<option value="' + cat.index + '">' + cat.name + '</option>';
+      });
+    }
+  } catch(e) {
+    toast('Failed to load categories', 'error');
+  }
+}
+
+async function addAdminCategory() {
+  const name = document.getElementById('adminCategoryName').value.trim();
+  if (!name) return;
+  
+  try {
+    await api({ action: 'addCategory', categoryName: name });
+    document.getElementById('adminCategoryName').value = '';
+    toast('Category added', 'success');
+    loadAdminCategories();
+  } catch(e) {
+    toast('Failed to add category', 'error');
+  }
+}
+
+async function editAdminCategory(index, oldName) {
+  const newName = prompt('Enter new category name:', oldName);
+  if (!newName || newName.trim() === oldName) return;
+  
+  try {
+    await api({ action: 'updateCategory', index, newName: newName.trim() });
+    toast('Category updated', 'success');
+    loadAdminCategories();
+  } catch(e) {
+    toast('Failed to update category', 'error');
+  }
+}
+
+async function deleteAdminCategory(index) {
+  if (!confirm('Are you sure you want to delete this category?')) return;
+  try {
+    await api({ action: 'deleteCategory', index });
+    toast('Category deleted', 'success');
+    loadAdminCategories();
+  } catch(e) {
+    toast('Failed to delete category', 'error');
+  }
+}
+
+async function loadAdminDishes() {
+  const catIndex = document.getElementById('adminDishCategorySelect').value;
+  const tbody = document.getElementById('adminDishesTable');
+  tbody.innerHTML = '';
+  if (!catIndex) return;
+  
+  try {
+    const res = await api({ action: 'getDishes', parentIndex: catIndex });
+    if (res.dishes) {
+      res.dishes.forEach(dish => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${dish.name}</td>
+            <td>₹${dish.amount}</td>
+            <td>
+              <button class="btn btn--sm btn--secondary" onclick="editAdminDish(${dish.rowIndex}, '${dish.name}', ${dish.amount})">Edit</button>
+              <button class="btn btn--sm btn--danger ml-1" onclick="deleteAdminDish(${dish.rowIndex})">Delete</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+  } catch(e) {
+    toast('Failed to load dishes', 'error');
+  }
+}
+
+async function addAdminDish() {
+  const catIndex = document.getElementById('adminDishCategorySelect').value;
+  const name = document.getElementById('adminDishName').value.trim();
+  const amount = parseInt(document.getElementById('adminDishAmount').value, 10);
+  
+  if (!catIndex) return toast('Select a category first', 'error');
+  if (!name || isNaN(amount)) return toast('Enter valid name and price', 'error');
+  
+  try {
+    await api({ action: 'addDish', parentIndex: catIndex, dishName: name, amount });
+    document.getElementById('adminDishName').value = '';
+    document.getElementById('adminDishAmount').value = '';
+    toast('Dish added', 'success');
+    loadAdminDishes();
+  } catch(e) {
+    toast('Failed to add dish', 'error');
+  }
+}
+
+async function editAdminDish(rowIndex, oldName, oldAmount) {
+  const newName = prompt('Enter new dish name:', oldName);
+  if (!newName) return;
+  const newAmount = prompt('Enter new dish price (₹):', oldAmount);
+  if (!newAmount || isNaN(parseInt(newAmount, 10))) return;
+  
+  try {
+    await api({ action: 'updateDish', rowIndex, newName: newName.trim(), newAmount: parseInt(newAmount, 10) });
+    toast('Dish updated', 'success');
+    loadAdminDishes();
+  } catch(e) {
+    toast('Failed to update dish', 'error');
+  }
+}
+
+async function deleteAdminDish(rowIndex) {
+  if (!confirm('Are you sure you want to delete this dish?')) return;
+  try {
+    await api({ action: 'deleteDish', rowIndex });
+    toast('Dish deleted', 'success');
+    loadAdminDishes();
+  } catch(e) {
+    toast('Failed to delete dish', 'error');
+  }
+}
+
+// Hooking into renderAdminDashboard
+const originalRenderAdminDashboard = renderAdminDashboard;
+renderAdminDashboard = async function(data) {
+  originalRenderAdminDashboard(data);
+  // Load POS admin stuff
+  loadAdminCategories();
+  try {
+    const res = await api({ action: 'getTableCount' });
+    document.getElementById('adminTableCount').value = res.count || '';
+    POS_STATE.tableCount = res.count || 0;
+  } catch(e) {}
+};
