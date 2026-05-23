@@ -27,6 +27,9 @@
     </div>
     
     <div class="navbar__actions">
+      <button class="cache-btn cache-btn--sync" id="btnCacheSync" onclick="syncSheetCache()" title="Sync cached data">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="feather feather-refresh-cw"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+      </button>
       <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
     </div>
   </div>
@@ -42,6 +45,14 @@
   <button class="nav-btn" id="navPos" onclick="showSection('pos')">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
     <span class="nav-text">POS</span>
+  </button>
+  <button class="nav-btn" id="navAllEntries" onclick="showSection('allEntries')">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    <span class="nav-text">Entries</span>
+  </button>
+  <button class="nav-btn" id="navDashboard" onclick="showSection('dashboard')">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    <span class="nav-text">Dashboard</span>
   </button>
   <button class="nav-btn" id="navAdmin" onclick="showSection('admin')">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
@@ -197,6 +208,12 @@
         <button class="btn btn--outline" onclick="showPosTables()">Back to Tables</button>
       </div>
       <div class="pos-categories-grid" id="posCategoriesGrid"></div>
+      
+      <div class="pos-action-bar mt-4 flex-row" style="justify-content: center; gap: 1rem;">
+        <button class="btn btn--generate-bill btn--lg pulse-hover" onclick="generateBill()">
+          <span class="btn-icon">🧾</span> Generate Bill
+        </button>
+      </div>
     </div>
 
     <!-- Dishes View -->
@@ -211,12 +228,49 @@
       <div class="pos-dishes-grid" id="posDishesGrid"></div>
       
       <div class="pos-action-bar mt-4 flex-row" style="justify-content: center; gap: 1rem;">
-        <button class="btn btn--primary btn--lg pulse-hover" onclick="generateBill()">
+        <button class="btn btn--generate-bill btn--lg pulse-hover" onclick="generateBill()">
           <span class="btn-icon">🧾</span> Generate Bill
         </button>
       </div>
     </div>
 
+  </section>
+
+  <!-- ═══════ ALL ENTRIES SECTION ═══════ -->
+  <section class="page-section wide" id="sectionAllEntries">
+    <div class="hero-header flex-between mb-3">
+      <div>
+        <h1 class="hero-title">All <span class="text-gradient">Entries</span></h1>
+        <p class="hero-subtitle">All generated bills and transaction history.</p>
+      </div>
+    </div>
+
+    <!-- Desktop View (Table) -->
+    <div class="card glass-card fade-in hide-on-mobile">
+      <div class="glass-table-wrap" style="max-height: 600px;">
+        <table class="entry-table">
+          <thead>
+            <tr>
+              <th>Mobile Number</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Amount</th>
+              <th>Payment Modes</th>
+              <th>Ordered Items</th>
+              <th style="text-align: center;">Visit #</th>
+            </tr>
+          </thead>
+          <tbody id="allEntriesTableBody">
+            <!-- Entries injected here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Mobile View (Card List) -->
+    <div class="show-on-mobile" id="allEntriesMobileList">
+      <!-- Injected here -->
+    </div>
   </section>
 
   <!-- ═══════ ADMIN SECTION ═══════ -->
@@ -244,105 +298,8 @@
       </div>
     </div>
 
-    <!-- Dashboard (hidden until login) -->
-    <div class="hidden fade-in" id="adminDashboard">
-      <div class="dashboard-header">
-        <h2 class="dashboard-title">Overview</h2>
-        <div class="date-badge" id="currentDateBadge"></div>
-      </div>
-
-      <div class="stats-grid" id="statsGrid"></div>
-
-      <div class="dashboard-grid">
-        <!-- Main Column -->
-        <div class="dashboard-main">
-          <!-- Month-Day Heatmap -->
-          <div class="card chart-card mb-3">
-            <div class="chart-card__header">
-              <div class="chart-card__title">
-                <span class="icon">📅</span> Month vs Day Activity Heatmap
-              </div>
-              <div class="toggle-row" id="mdHeatmapToggle">
-                <button class="toggle-btn active" onclick="setMdHeatmapType('entries', this)">Entries</button>
-                <button class="toggle-btn" onclick="setMdHeatmapType('amount', this)">Amount</button>
-                <button class="toggle-btn" onclick="setMdHeatmapType('cash', this)">Cash</button>
-                <button class="toggle-btn" onclick="setMdHeatmapType('upi', this)">UPI</button>
-                <button class="toggle-btn" onclick="setMdHeatmapType('card', this)">Card</button>
-              </div>
-            </div>
-            <button class="btn btn--outline btn--sm mb-2" id="btnCalcMdHeatmap" onclick="calculateMdHeatmap()">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg> Calculate Heatmap
-            </button>
-            <div class="heatmap-wrapper">
-              <div id="mdHeatmapContainer"></div>
-            </div>
-          </div>
-
-          <!-- Heatmap -->
-          <div class="card chart-card">
-            <div class="chart-card__header">
-              <div class="chart-card__title">
-                <span class="icon">🔥</span> Day-Hour Activity Heatmap
-              </div>
-              <div class="toggle-row" id="heatmapToggle">
-                <button class="toggle-btn active" onclick="setHeatmapType('entries', this)">Entries</button>
-                <button class="toggle-btn" onclick="setHeatmapType('amount', this)">Amount</button>
-              </div>
-            </div>
-            <button class="btn btn--outline btn--sm mb-2" id="btnCalcHeatmap" onclick="calculateHeatmap()">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg> Generate Heatmap
-            </button>
-            <div class="heatmap-wrapper">
-              <div id="heatmapContainer"></div>
-            </div>
-          </div>
-
-          <!-- Time Between Visits -->
-          <div class="card chart-card">
-            <div class="chart-card__header">
-              <div class="chart-card__title">
-                <span class="icon">⏱️</span> Time Between Visits
-              </div>
-              <button class="btn btn--outline btn--sm" id="btnCalcTBV" onclick="calculateTimeBetweenVisits()">
-                Generate
-              </button>
-            </div>
-            <div id="tbvContainer" class="hidden">
-              <div class="tbv-stats-mini" id="tbvStats"></div>
-              <div class="chart-wrap mt-3"><canvas id="chartTBV"></canvas></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Sidebar Column -->
-        <div class="dashboard-sidebar">
-          <!-- Today toggle -->
-          <div class="card chart-card highlight-card">
-            <div class="chart-card__header">
-              <div class="chart-card__title">📅 Today's Summary</div>
-              <div class="toggle-row mini" id="todayToggle">
-                <button class="toggle-btn active" onclick="setTodayView('entries', this)">#</button>
-                <button class="toggle-btn" onclick="setTodayView('amount', this)">₹</button>
-              </div>
-            </div>
-            <div id="todayValue" class="huge-value"></div>
-          </div>
-
-          <!-- Repeat vs New -->
-          <div class="card chart-card">
-            <div class="chart-card__title mb-3">👥 Customer Base</div>
-            <div class="chart-wrap donut-wrap"><canvas id="chartRepeatNew"></canvas></div>
-          </div>
-
-          <!-- Top Repeat Customers -->
-          <div class="card chart-card">
-            <div class="chart-card__title mb-3">🏆 Top Loyalists</div>
-            <ul class="top-list" id="topCustomersList"></ul>
-          </div>
-        </div>
-      </div>
-
-      <!-- POS Admin Management -->
+    <!-- POS Admin Management -->
+    <div class="hidden fade-in" id="adminPOSPanel">
       <div class="dashboard-header mt-4">
         <h2 class="dashboard-title">POS Management</h2>
       </div>
@@ -423,6 +380,150 @@
               </table>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ DASHBOARD SECTION (PUBLIC) ═══════ -->
+  <section class="page-section wide" id="sectionDashboard">
+    <div class="dashboard-header">
+      <h2 class="dashboard-title">Overview</h2>
+      <div class="date-badge" id="currentDateBadge"></div>
+    </div>
+
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <!-- Best Selling Dishes Analytics -->
+    <div class="dashboard-grid-equal mb-3">
+      <!-- Daily Top 5 -->
+      <div class="card chart-card">
+        <div class="chart-card__header flex-between">
+          <div class="chart-card__title">
+            <span class="icon">📈</span> Daily Top 5 Best-Sellers
+          </div>
+          <input type="date" id="bestSellersDateFilter" class="form-input" style="max-width: 150px; padding: 0.25rem 0.5rem; font-size: 0.85rem;" onchange="loadBestSellers()" />
+        </div>
+        <div class="table-responsive glass-table-wrap">
+          <table class="entry-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Dish Name</th>
+                <th>Type/Flavour</th>
+                <th style="text-align: center;">Qty</th>
+              </tr>
+            </thead>
+            <tbody id="dailyBestSellersBody">
+              <!-- Injected here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Overall Top 5 -->
+      <div class="card chart-card">
+        <div class="chart-card__header">
+          <div class="chart-card__title">
+            <span class="icon">🏆</span> Overall Top 5 Best-Sellers
+          </div>
+        </div>
+        <div class="table-responsive glass-table-wrap">
+          <table class="entry-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Dish Name</th>
+                <th>Type/Flavour</th>
+                <th style="text-align: center;">Qty</th>
+              </tr>
+            </thead>
+            <tbody id="overallBestSellersBody">
+              <!-- Injected here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <!-- Main Column -->
+      <div class="dashboard-main">
+        <!-- Month-Day Heatmap -->
+        <div class="card chart-card mb-3">
+          <div class="chart-card__header">
+            <div class="chart-card__title">
+              <span class="icon">📅</span> Month vs Day Activity Heatmap
+            </div>
+            <div class="toggle-row" id="mdHeatmapToggle">
+              <button class="toggle-btn" onclick="setMdHeatmapType('entries', this)">Entries</button>
+              <button class="toggle-btn active" onclick="setMdHeatmapType('amount', this)">Amount</button>
+              <button class="toggle-btn" onclick="setMdHeatmapType('cash', this)">Cash</button>
+              <button class="toggle-btn" onclick="setMdHeatmapType('upi', this)">UPI</button>
+              <button class="toggle-btn" onclick="setMdHeatmapType('card', this)">Card</button>
+            </div>
+          </div>
+
+          <div class="heatmap-wrapper">
+            <div id="mdHeatmapContainer"></div>
+          </div>
+        </div>
+
+        <!-- Heatmap -->
+        <div class="card chart-card">
+          <div class="chart-card__header">
+            <div class="chart-card__title">
+              <span class="icon">🔥</span> Day-Hour Activity Heatmap
+            </div>
+            <div class="toggle-row" id="heatmapToggle">
+              <button class="toggle-btn" onclick="setHeatmapType('entries', this)">Entries</button>
+              <button class="toggle-btn active" onclick="setHeatmapType('amount', this)">Amount</button>
+            </div>
+          </div>
+
+          <div class="heatmap-wrapper">
+            <div id="heatmapContainer"></div>
+          </div>
+        </div>
+
+        <!-- Time Between Visits -->
+        <div class="card chart-card">
+          <div class="chart-card__header">
+            <div class="chart-card__title">
+              <span class="icon">⏱️</span> Time Between Visits
+            </div>
+          </div>
+          <div id="tbvContainer" class="hidden">
+            <div class="tbv-stats-mini" id="tbvStats"></div>
+            <div class="chart-wrap mt-3"><canvas id="chartTBV"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sidebar Column -->
+      <div class="dashboard-sidebar">
+        <!-- Today toggle -->
+        <div class="card chart-card highlight-card">
+          <div class="chart-card__header">
+            <div class="chart-card__title">📅 Today's Summary</div>
+            <div class="toggle-row mini" id="todayToggle">
+              <button class="toggle-btn active" onclick="setTodayView('entries', this)">#</button>
+              <button class="toggle-btn" onclick="setTodayView('amount', this)">₹</button>
+            </div>
+          </div>
+          <div id="todayValue" class="huge-value"></div>
+        </div>
+
+        <!-- Repeat vs New -->
+        <div class="card chart-card">
+          <div class="chart-card__title mb-3">👥 Customer Base</div>
+          <div class="chart-wrap donut-wrap"><canvas id="chartRepeatNew"></canvas></div>
+        </div>
+
+        <!-- Top Repeat Customers -->
+        <div class="card chart-card">
+          <div class="chart-card__title mb-3">🏆 Top Loyalists</div>
+          <ul class="top-list" id="topCustomersList"></ul>
         </div>
       </div>
     </div>
@@ -569,9 +670,6 @@
       <div id="flavourOptionsContainer" style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem;">
         <!-- Radio buttons injected here -->
       </div>
-      <button class="btn btn--primary btn--block btn--lg" onclick="confirmFlavourSelection()">
-        Add to Cart
-      </button>
     </div>
   </div>
 </div>
@@ -593,6 +691,56 @@
       <div id="flavourRemoveOptionsContainer" style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem;">
         <!-- Clickable options injected here -->
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ EDIT DISH MODAL ═══════ -->
+<div class="modal-overlay" id="modalEditDish">
+  <div class="modal glass-modal" style="max-width: 400px;">
+    <div class="modal__header">
+      <div class="modal__title">
+        <span class="icon">✏️</span> Edit Dish
+      </div>
+      <button class="modal__close" onclick="closeEditDishModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="modal__body">
+      <input type="hidden" id="editDishRowIndex" />
+      <div class="form-group mb-3">
+        <label class="form-label" for="editDishName">Dish Name</label>
+        <input class="form-input" id="editDishName" type="text" placeholder="Enter dish name" />
+      </div>
+      <div class="form-group mb-3">
+        <label class="form-label" for="editDishPrice">Price (₹)</label>
+        <input class="form-input" id="editDishPrice" type="number" placeholder="Enter price" />
+      </div>
+      <div class="btn-row">
+        <button class="btn btn--primary btn--block btn--lg" onclick="saveAdminDishEdit()">
+          Save Changes
+        </button>
+        <button class="btn btn--ghost btn--block" onclick="closeEditDishModal()">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ ENTRY DETAILS MODAL (MOBILE) ═══════ -->
+<div class="modal-overlay" id="modalEntryDetails">
+  <div class="modal glass-modal">
+    <div class="modal__header">
+      <div class="modal__title">
+        <span class="icon">🧾</span> Entry Details
+      </div>
+      <button class="modal__close" onclick="closeEntryDetailsModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="modal__body" id="modalEntryDetailsBody">
+      <!-- Details dynamically loaded via JS -->
     </div>
   </div>
 </div>
