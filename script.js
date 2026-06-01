@@ -9,7 +9,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycby2RXrQOKkXQ3dgWRz_hCJM
 
 // Runtime cache
 let APP_CONFIG = null;       // { minAmount, cycle, rewardValue }
-let CURRENT_CUSTOMER = null; // customer data from Sheet1
+let CURRENT_CUSTOMER = null; // customer data from reward
 let LAST_ENTRY_RESULT = null;
 let ADMIN_DATA = null;
 let ADMIN_AUTHENTICATED = false;
@@ -133,6 +133,28 @@ function updateCacheButtonsVisibility(sectionName) {
   btnSync.style.display = shouldShow ? '' : 'none';
 }
 
+/** Check if the remaining width requires icon-only bottom navigation */
+function updateNavDockResponsive() {
+  const body = document.body;
+  const isSplitActive = body.classList.contains('split-active');
+  const splitWidth = isSplitActive ? (parseFloat(body.style.getPropertyValue('--split-width')) || 0) : 0;
+  const remainingWidth = window.innerWidth - splitWidth;
+  
+  const dock = document.getElementById('navDock');
+  if (dock) {
+    if (remainingWidth < 550) {
+      dock.classList.add('nav-icon-only');
+    } else {
+      dock.classList.remove('nav-icon-only');
+    }
+  }
+  
+  // Re-position active page indicator line after button widths adjust
+  setTimeout(() => {
+    updateNavIndicator(document.querySelector('.nav-btn.active'));
+  }, 50);
+}
+
 // ──── Month-Day Heatmap ────
 let mdHeatmapType = 'amount';
 
@@ -196,7 +218,7 @@ function renderMdHeatmap(matrix) {
   container.innerHTML = html;
 }
 
-// ──── HARDCODED WHATSAPP TEMPLATE (removes Sheet3 dependency) ────
+// ──── HARDCODED WHATSAPP TEMPLATE (removes admin dependency) ────
 const WHATSAPP_TEMPLATE = "https://api.whatsapp.com/send?phone=91<number>&text=*Perfect%20Pizza%20Point*%F0%9F%8D%95%0A%0A%F0%9F%93%8A%20Current%20visit%20count%20%3A%20<completedvisit>%0A%F0%9F%92%B0%C2%A0%20Billing%20Amount%20%3D%20%E2%82%B9<amount>%0A%E2%9C%89%EF%B8%8F%20<message>%0A%0A%F0%9F%94%97%20Useful%20links%3A%0A%E2%9D%A4%EF%B8%8F%20Insta%20page%20%3A%20https%3A%2F%2Finstagram.com%2Fperfect_pizza_point_p3%0A%F0%9F%8D%95%20Zomato%20%3A%20https%3A%2F%2Fzomato.onelink.me%2Fxqzv%2F0o9285p4%0A%F0%9F%8D%94%20Swiggy%20%3A%20https%3A%2F%2Fwww.swiggy.com%2Fmenu%2F765590%0A%F0%9F%A4%9D%20Loyalty%20%3A%20<loyality>%0A%E2%98%8E%EF%B8%8F%20Phone%20No%3A%20%2B918319798869";
 
 // ──── HELPERS ────
@@ -380,13 +402,19 @@ function updateNavIndicator(btn) {
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     updateNavIndicator(document.querySelector('.nav-btn.active'));
+    updateNavDockResponsive();
   }, 100);
   window.addEventListener('resize', () => {
     updateNavIndicator(document.querySelector('.nav-btn.active'));
+    updateNavDockResponsive();
   });
 
   // Restore saved loyalty state on page load/reload
   restoreLoyaltyState();
+  
+  // Initialize third-party integration dock
+  fetchIntegrationLinks();
+  initResizer();
 });
 
 async function restoreLoyaltyState() {
@@ -445,6 +473,11 @@ async function handleAddEntry() {
   btn.disabled = false;
   btn.innerHTML = '➕ Add Entry';
 
+  if (mobile === '0000000000') {
+    checkAmountAndToggleButtons();
+    return;
+  }
+
   // ── Background: run the original duplicate-check against Google Sheets ──
   try {
     const cust = await api({ action: 'getCustomer', mobile });
@@ -468,6 +501,15 @@ async function handleAddEntry() {
   } catch (e) {
     console.error('Background duplicate check failed', e);
   }
+}
+
+function handleWithoutMobileEntry() {
+  const mobileInput = document.getElementById('inputMobile');
+  if (mobileInput) {
+    mobileInput.value = '0000000000';
+    localStorage.setItem('ppp_loyalty_mobile', '0000000000');
+  }
+  handleAddEntry();
 }
 
 function checkAmountAndToggleButtons() {
@@ -691,6 +733,47 @@ async function handleSaveEntry() {
   btn.disabled = true;
   btn.innerHTML = '✔ Saved';
 
+  const orderItems = localStorage.getItem('ppp_pendingOrderItems') || '';
+  const payAmts = getPaymentAmounts(amount);
+
+  if (mobile === '0000000000') {
+    // Skip optimistic loyalty UI logic, just toast success
+    toast('✅ Bill generated successfully!', 'success');
+    
+    // Clear persistent entry data from localStorage since it is saved
+    localStorage.removeItem('ppp_loyalty_form_open');
+    localStorage.removeItem('ppp_loyalty_mobile');
+    localStorage.removeItem('ppp_loyalty_amount');
+    localStorage.removeItem('ppp_loyalty_message');
+    localStorage.removeItem('ppp_pendingOrderItems');
+    
+    try {
+      const result = await api({ action: 'addbillEntry', mobile, amount, date, time, message, cashAmt: payAmts.cashAmt, upiAmt: payAmts.upiAmt, cardAmt: payAmts.cardAmt, orderItems });
+      if (result.error) {
+        toast(result.error, 'error');
+        btn.disabled = false;
+        btn.innerHTML = '💾 Save Entry';
+        return;
+      }
+      
+      // Dynamic sync
+      if (typeof downloadSheetCache === 'function') {
+        downloadSheetCache(true);
+      }
+      
+      // Wait 2 seconds, then return to home screen
+      setTimeout(() => {
+        closeEntryForm();
+      }, 2000);
+    } catch (e) {
+      console.error('Save bill failed', e);
+      toast('Error saving bill', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '💾 Save Entry';
+    }
+    return;
+  }
+
   // Compute optimistic entry data so the UI can render immediately
   const cycle = APP_CONFIG ? APP_CONFIG.cycle : 10;
   const estimatedTotal = CURRENT_CUSTOMER && CURRENT_CUSTOMER.found
@@ -715,11 +798,9 @@ async function handleSaveEntry() {
   localStorage.removeItem('ppp_loyalty_amount');
   localStorage.removeItem('ppp_loyalty_message');
   
-  const orderItems = localStorage.getItem('ppp_pendingOrderItems') || '';
   localStorage.removeItem('ppp_pendingOrderItems');
 
   // ── Background: persist to Google Sheets (original flow) ──
-  const payAmts = getPaymentAmounts(amount);
   try {
     const result = await api({ action: 'addEntry', mobile, amount, date, time, message, cashAmt: payAmts.cashAmt, upiAmt: payAmts.upiAmt, cardAmt: payAmts.cardAmt, orderItems });
     if (result.error) {
@@ -760,7 +841,7 @@ async function handleSaveEntry() {
       upi: payAmts.upiAmt,
       card: payAmts.cardAmt,
       orderItems: orderItems,
-      source: 'Sheet2'
+      source: 'entry'
     };
     ALL_ENTRIES_CACHE.unshift(newCacheEntry);
     setCacheItem('getAllEntries', ALL_ENTRIES_CACHE);
@@ -805,10 +886,51 @@ async function handleReceiptOnly() {
   const payAmts = getPaymentAmounts(amount);
   const orderItems = localStorage.getItem('ppp_pendingOrderItems') || '';
 
+  if (mobile === '0000000000') {
+    toast('✅ Bill generated successfully!', 'success');
+    
+    localStorage.removeItem('ppp_loyalty_form_open');
+    localStorage.removeItem('ppp_loyalty_mobile');
+    localStorage.removeItem('ppp_loyalty_amount');
+    localStorage.removeItem('ppp_loyalty_message');
+    localStorage.removeItem('ppp_pendingOrderItems');
+    
+    try {
+      await api({
+        action: 'addbillEntry',
+        mobile,
+        amount,
+        date,
+        time,
+        message,
+        cashAmt: payAmts.cashAmt,
+        upiAmt: payAmts.upiAmt,
+        cardAmt: payAmts.cardAmt,
+        orderItems
+      });
+      
+      if (typeof downloadSheetCache === 'function') {
+        downloadSheetCache(true);
+      }
+      
+      setTimeout(() => {
+        closeEntryForm();
+        btn.disabled = false;
+        btn.innerHTML = '🧾 Generate Receipt Only';
+      }, 2000);
+    } catch (e) {
+      console.error('Failed to save receipt to bill', e);
+      toast('Error saving bill', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '🧾 Generate Receipt Only';
+    }
+    return;
+  }
+
   try {
-    // Save uncounted/receipt-only entry to Sheet7 in the background
+    // Save uncounted/receipt-only entry to bill in the background
     await api({
-      action: 'addSheet7Entry',
+      action: 'addbillEntry',
       mobile,
       amount,
       date,
@@ -839,7 +961,7 @@ async function handleReceiptOnly() {
       upi: payAmts.upiAmt,
       card: payAmts.cardAmt,
       orderItems: orderItems,
-      source: 'Sheet7'
+      source: 'bill'
     };
     ALL_ENTRIES_CACHE.unshift(newCacheEntry);
     setCacheItem('getAllEntries', ALL_ENTRIES_CACHE);
@@ -855,7 +977,7 @@ async function handleReceiptOnly() {
     downloadSheetCache(true);
     
   } catch (e) {
-    console.error('Failed to save receipt to Sheet7', e);
+    console.error('Failed to save receipt to bill', e);
     toast('⚠️ WhatsApp receipt generated, but database sync failed.', 'warning');
   }
 
@@ -2447,4 +2569,263 @@ async function loadAdminPOSConfig() {
   } catch(e) {
     console.error('Failed to load table count in POS configuration', e);
   }
+}
+
+/* ══════════════════════════════════════════════════
+   THIRD-PARTY INTEGRATION DOCK (resturant_partner)
+═════════════════════════════════════════════════════ */
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('open');
+  }
+}
+
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.classList.remove('open');
+    modal.classList.add('hidden');
+  }
+}
+
+let INTEGRATION_LINKS = [];
+let splitCurrentWidth = 40; // Default width percentage for the iframe panel
+
+async function fetchIntegrationLinks() {
+  try {
+    const res = await api({ action: 'getIntegrationLinks' });
+    if (res.links) {
+      INTEGRATION_LINKS = res.links;
+      renderIntegrationDock();
+    }
+  } catch (err) {
+    console.error('Failed to fetch integration links', err);
+  }
+}
+
+function renderIntegrationDock() {
+  const dock = document.getElementById('integrationDock');
+  if (!dock) return;
+  
+  let html = '';
+  INTEGRATION_LINKS.forEach(link => {
+    // Generate a favicon URL from Google's service
+    const iconUrl = `https://www.google.com/s2/favicons?domain=${link.url}&sz=64`;
+    html += `
+      <button class="dock-btn" onclick="openIntegration('${link.name}', '${link.url}')" title="${link.name}">
+        <img src="${iconUrl}" alt="${link.name}" onerror="this.src=''; this.onerror=null; this.alt='🌐';">
+      </button>
+    `;
+  });
+  
+  // Plus Button for Custom Websites
+  html += `
+    <button class="dock-btn" onclick="openModal('modalAddIntegration')" title="Add Custom Website">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </button>
+  `;
+  
+  dock.innerHTML = html;
+  
+  // Also update the split-view header dropdown select if it exists
+  const select = document.getElementById('splitIntegrationSelect');
+  const activeTitle = (select && document.getElementById('splitIntegration')?.classList.contains('open'))
+    ? (select.options[select.selectedIndex]?.text || '')
+    : '';
+  updateSplitIntegrationSelect(activeTitle);
+}
+
+function updateSplitIntegrationSelect(activeName) {
+  const select = document.getElementById('splitIntegrationSelect');
+  if (!select) return;
+  
+  let html = '';
+  INTEGRATION_LINKS.forEach(link => {
+    const selected = link.name === activeName ? 'selected' : '';
+    html += `<option value="${link.url}" ${selected}>${link.name}</option>`;
+  });
+  select.innerHTML = html;
+}
+
+function handleSplitSelectChange(selectElem) {
+  const url = selectElem.value;
+  const name = selectElem.options[selectElem.selectedIndex].text;
+  openIntegration(name, url);
+}
+
+function openIntegration(name, url) {
+  document.body.classList.add('split-active');
+  
+  const iframe = document.getElementById('splitIframe');
+  const splitTitle = document.getElementById('splitTitle');
+  const splitContainer = document.getElementById('splitIntegration');
+  
+  if (splitTitle) splitTitle.textContent = name;
+  if (iframe) iframe.src = url;
+  
+  updateSplitIntegrationSelect(name);
+  
+  // Apply calculated width dynamically
+  const widthPx = window.innerWidth * (splitCurrentWidth / 100);
+  
+  if (splitContainer) {
+    splitContainer.style.width = `${widthPx}px`;
+    splitContainer.classList.add('open');
+  }
+  
+  // Shrink the main body to accommodate the fixed split pane
+  document.body.style.paddingRight = `${widthPx}px`;
+  document.body.style.setProperty('--split-width', `${widthPx}px`);
+  
+  // Update responsive bottom navigation
+  updateNavDockResponsive();
+}
+
+function closeIntegration() {
+  document.body.classList.remove('split-active');
+  const splitContainer = document.getElementById('splitIntegration');
+  if (splitContainer) splitContainer.classList.remove('open');
+  document.body.style.paddingRight = '0px';
+  document.body.style.setProperty('--split-width', '0px');
+  
+  const iframe = document.getElementById('splitIframe');
+  if (iframe) iframe.src = ''; // stop rendering/media
+  
+  // Update responsive bottom navigation
+  updateNavDockResponsive();
+}
+
+function reloadIntegration() {
+  const iframe = document.getElementById('splitIframe');
+  if (iframe && iframe.src) {
+    // Force reload by resetting the src
+    const currentSrc = iframe.src;
+    iframe.src = '';
+    setTimeout(() => { iframe.src = currentSrc; }, 50);
+  }
+}
+
+function openIntegrationNewTab() {
+  const iframe = document.getElementById('splitIframe');
+  if (iframe && iframe.src) {
+    window.open(iframe.src, '_blank');
+  }
+}
+
+async function handleAddIntegrationSubmit() {
+  const nameInput = document.getElementById('inputIntegrationName');
+  const urlInput = document.getElementById('inputIntegrationUrl');
+  
+  if (!nameInput || !urlInput) return;
+  
+  const name = nameInput.value.trim();
+  let url = urlInput.value.trim();
+  
+  if (!name || !url) {
+    toast('Please enter both name and URL', 'error');
+    return;
+  }
+  
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url;
+  }
+  
+  const btn = document.getElementById('btnSaveIntegration');
+  const originalText = btn.innerText;
+  btn.innerText = 'Saving...';
+  btn.disabled = true;
+  
+  try {
+    const res = await api({ action: 'addIntegrationLink', name, url });
+    if (res.success) {
+      toast('Website added successfully', 'success');
+      closeModal('modalAddIntegration');
+      nameInput.value = '';
+      urlInput.value = '';
+      
+      // Optimistic update
+      INTEGRATION_LINKS.push({ name, url });
+      renderIntegrationDock();
+    } else {
+      toast(res.error || 'Failed to add website', 'error');
+    }
+  } catch(e) {
+    console.error(e);
+    toast('Error saving website', 'error');
+  } finally {
+    btn.innerText = originalText;
+    btn.disabled = false;
+  }
+}
+
+// Split Pane Resizer Logic
+function initResizer() {
+  const divider = document.getElementById('splitDivider');
+  const splitContainer = document.getElementById('splitIntegration');
+  if (!divider || !splitContainer) return;
+  
+  let isDragging = false;
+  
+  const onDrag = (e) => {
+    if (!isDragging) return;
+    
+    e.preventDefault();
+    
+    // Calculate new width from right side
+    const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+    const newWidth = window.innerWidth - clientX;
+    
+    // Constraint width (min 300px, max 80vw)
+    const minW = 300;
+    const maxW = window.innerWidth * 0.8;
+    
+    const finalW = Math.max(minW, Math.min(newWidth, maxW));
+    
+    // Update percentage state
+    splitCurrentWidth = (finalW / window.innerWidth) * 100;
+    
+    splitContainer.style.width = `${finalW}px`;
+    document.body.style.paddingRight = `${finalW}px`;
+    document.body.style.setProperty('--split-width', `${finalW}px`);
+    updateNavDockResponsive();
+  };
+  
+  const onStopDrag = () => {
+    if (isDragging) {
+      isDragging = false;
+      document.body.classList.remove('dragging');
+      splitContainer.classList.remove('dragging');
+      divider.classList.remove('dragging');
+      
+      // We also add pointer-events: none to iframe while dragging to prevent iframe from swallowing mouse events
+      const iframe = document.getElementById('splitIframe');
+      if (iframe) iframe.style.pointerEvents = 'auto';
+      
+      document.removeEventListener('mousemove', onDrag);
+      document.removeEventListener('mouseup', onStopDrag);
+      document.removeEventListener('touchmove', onDrag);
+      document.removeEventListener('touchend', onStopDrag);
+    }
+  };
+  
+  const onStartDrag = (e) => {
+    isDragging = true;
+    document.body.classList.add('dragging');
+    splitContainer.classList.add('dragging');
+    divider.classList.add('dragging');
+    
+    const iframe = document.getElementById('splitIframe');
+    if (iframe) iframe.style.pointerEvents = 'none';
+    
+    document.addEventListener('mousemove', onDrag, { passive: false });
+    document.addEventListener('mouseup', onStopDrag);
+    document.addEventListener('touchmove', onDrag, { passive: false });
+    document.addEventListener('touchend', onStopDrag);
+  };
+  
+  divider.addEventListener('mousedown', onStartDrag);
+  divider.addEventListener('touchstart', onStartDrag, { passive: true });
 }
