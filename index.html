@@ -383,6 +383,27 @@
               </table>
             </div>
           </div>
+
+          <!-- System Settings -->
+          <div class="card chart-card mb-3">
+            <div class="chart-card__header">
+              <div class="chart-card__title">⚙️ System Settings</div>
+            </div>
+            <div class="admin-setting-row">
+              <div class="admin-setting-info">
+                <span class="admin-setting-label">🎁 Reward System</span>
+                <span class="admin-setting-desc">When OFF, all transactions generate bills only — no loyalty entries or rewards are recorded.</span>
+              </div>
+              <label class="reward-toggle-switch" for="adminRewardToggle">
+                <input type="checkbox" id="adminRewardToggle" checked onchange="handleAdminToggleRewardSystem(this)" />
+                <span class="reward-toggle-slider"></span>
+              </label>
+            </div>
+            <div class="admin-setting-status" id="rewardToggleStatus">
+              <span class="reward-status-badge reward-status-on" id="rewardStatusBadge">● Reward System is ON</span>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
