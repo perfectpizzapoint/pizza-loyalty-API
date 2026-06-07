@@ -985,7 +985,7 @@ async function handleReceiptOnly() {
   btn.innerHTML = '🧾 Generate Receipt Only';
 
   // Build the WhatsApp link using the current customer's data, without adding a loyalty entry
-  buildWhatsAppLink(CURRENT_CUSTOMER, mobile, amount, message);
+  buildWhatsAppLink(CURRENT_CUSTOMER, mobile, amount, message, true);
   show('rowWhatsapp');
   show('rowDetailsBtn');
 }
@@ -1169,8 +1169,11 @@ function closeEntryDetailsModal() {
 }
 
 // ──── WHATSAPP LINK ────
-function buildWhatsAppLink(result, mobile, amount, message) {
-  const template = WHATSAPP_TEMPLATE;
+function buildWhatsAppLink(result, mobile, amount, message, isBillOnly) {
+  let template = WHATSAPP_TEMPLATE;
+  if (isBillOnly) {
+    template = template.replace('%F0%9F%93%8A%20Current%20visit%20count%20%3A%20<completedvisit>%0A', '');
+  }
   const cycle    = (result && result.cycle) || (APP_CONFIG ? APP_CONFIG.cycle : 10);
   const total    = (result && typeof result.totalEntries === 'number') ? result.totalEntries : 0;
 
