@@ -522,6 +522,19 @@ function checkAmountAndToggleButtons() {
   const btnReceipt = document.getElementById('btnReceiptOnly');
   const btnClaim = document.getElementById('btnClaimForce');
 
+  // If reward system is OFF, always show only the Receipt button
+  const rewardOn = APP_CONFIG ? APP_CONFIG.rewardSystemOn !== false : true;
+  if (!rewardOn) {
+    btnSave.style.display = 'none';
+    btnReceipt.style.display = '';
+    btnClaim.style.display = 'none';
+    if (!isNaN(amount) && amount > 0) {
+      hideErr('errAmount');
+      amountInput.classList.remove('error');
+    }
+    return;
+  }
+
   const todayDate = istDateStr();
   const alreadyAddedToday = CURRENT_CUSTOMER && CURRENT_CUSTOMER.found && CURRENT_CUSTOMER.lastVisitDate === todayDate;
 
@@ -717,13 +730,23 @@ async function handleSaveEntry() {
   const date   = document.getElementById('dispDate').value;
   const time   = istTimeStr(); // refresh time
   const message = document.getElementById('inputMessage').value.trim();
+  const rewardOn = APP_CONFIG ? APP_CONFIG.rewardSystemOn !== false : true;
   const minAmt = APP_CONFIG ? APP_CONFIG.minAmount : 100;
 
   hideErr('errAmount');
-  if (isNaN(amount) || amount < minAmt) {
-    showErr('errAmount');
-    document.getElementById('inputAmount').classList.add('error');
-    return;
+  // When reward system is OFF, skip minimum amount validation (just need amount > 0)
+  if (rewardOn) {
+    if (isNaN(amount) || amount < minAmt) {
+      showErr('errAmount');
+      document.getElementById('inputAmount').classList.add('error');
+      return;
+    }
+  } else {
+    if (isNaN(amount) || amount <= 0) {
+      showErr('errAmount');
+      document.getElementById('inputAmount').classList.add('error');
+      return;
+    }
   }
   document.getElementById('inputAmount').classList.remove('error');
 
@@ -985,7 +1008,7 @@ async function handleReceiptOnly() {
   btn.innerHTML = '🧾 Generate Receipt Only';
 
   // Build the WhatsApp link using the current customer's data, without adding a loyalty entry
-  buildWhatsAppLink(CURRENT_CUSTOMER, mobile, amount, message, true);
+  buildWhatsAppLink(CURRENT_CUSTOMER, mobile, amount, message, false);
   show('rowWhatsapp');
   show('rowDetailsBtn');
 }
@@ -1169,11 +1192,8 @@ function closeEntryDetailsModal() {
 }
 
 // ──── WHATSAPP LINK ────
-function buildWhatsAppLink(result, mobile, amount, message, isBillOnly) {
+function buildWhatsAppLink(result, mobile, amount, message, isLoyaltyEntry = true) {
   let template = WHATSAPP_TEMPLATE;
-  if (isBillOnly) {
-    template = template.replace('%F0%9F%93%8A%20Current%20visit%20count%20%3A%20<completedvisit>%0A', '');
-  }
   const cycle    = (result && result.cycle) || (APP_CONFIG ? APP_CONFIG.cycle : 10);
   const total    = (result && typeof result.totalEntries === 'number') ? result.totalEntries : 0;
 
@@ -1185,6 +1205,11 @@ function buildWhatsAppLink(result, mobile, amount, message, isBillOnly) {
   // loyalty link
   const loyaltyNum = total === 0 ? 0 : (mod === 0 ? cycle : cyclePosition);
   const loyaltyLink = 'https://perfectpizzapoint.github.io/' + loyaltyNum + '/';
+
+  if (!isLoyaltyEntry) {
+    template = template.replace('%F0%9F%93%8A%20Current%20visit%20count%20%3A%20<completedvisit>%0A', '');
+    template = template.replace('%F0%9F%A4%9D%20Loyalty%20%3A%20<loyality>%0A', '');
+  }
 
   let link = template
     .replace('<number>', mobile)
@@ -2572,6 +2597,53 @@ async function loadAdminPOSConfig() {
     POS_STATE.tableCount = res.count || 0;
   } catch(e) {
     console.error('Failed to load table count in POS configuration', e);
+  }
+
+  // Sync reward system toggle state
+  syncRewardToggleUI();
+}
+
+function syncRewardToggleUI() {
+  const toggle = document.getElementById('adminRewardToggle');
+  const badge = document.getElementById('rewardStatusBadge');
+  if (!toggle || !badge) return;
+
+  const isOn = APP_CONFIG ? APP_CONFIG.rewardSystemOn !== false : true;
+  toggle.checked = isOn;
+  badge.textContent = isOn ? '● Reward System is ON' : '● Reward System is OFF';
+  badge.className = 'reward-status-badge ' + (isOn ? 'reward-status-on' : 'reward-status-off');
+}
+
+async function handleAdminToggleRewardSystem(checkbox) {
+  const newStatus = checkbox.checked ? 1 : 0;
+  const badge = document.getElementById('rewardStatusBadge');
+
+  // Optimistic UI update
+  if (badge) {
+    badge.textContent = checkbox.checked ? '● Reward System is ON' : '● Reward System is OFF';
+    badge.className = 'reward-status-badge ' + (checkbox.checked ? 'reward-status-on' : 'reward-status-off');
+  }
+
+  try {
+    const result = await api({ action: 'updateRewardToggle', status: newStatus });
+    if (result.error) {
+      toast('Failed to update: ' + result.error, 'error');
+      // Revert
+      checkbox.checked = !checkbox.checked;
+      syncRewardToggleUI();
+      return;
+    }
+
+    // Update local config
+    if (APP_CONFIG) {
+      APP_CONFIG.rewardSystemOn = result.rewardSystemOn;
+    }
+    toast(result.rewardSystemOn ? '🎁 Reward System enabled!' : '🧾 Reward System disabled — bill-only mode active.', 'success');
+  } catch (e) {
+    toast('Error updating toggle: ' + e.message, 'error');
+    // Revert on failure
+    checkbox.checked = !checkbox.checked;
+    syncRewardToggleUI();
   }
 }
 
