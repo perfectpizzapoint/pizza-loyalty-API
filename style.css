@@ -1569,3 +1569,108 @@ body.split-active.dragging .modal-overlay {
     right: 1.5rem;
   }
 }
+
+/* ══════════════════════════════════════════════════
+   ADMIN REWARD SYSTEM TOGGLE
+═════════════════════════════════════════════════════ */
+
+.admin-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  gap: 1rem;
+}
+
+.admin-setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.admin-setting-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-setting-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* iOS-style toggle switch */
+.reward-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.reward-toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.reward-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(120, 120, 128, 0.32);
+  border-radius: 28px;
+  transition: background 0.3s ease;
+}
+
+.reward-toggle-slider::before {
+  content: "";
+  position: absolute;
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.reward-toggle-switch input:checked + .reward-toggle-slider {
+  background: linear-gradient(135deg, #34c759, #30d158);
+}
+
+.reward-toggle-switch input:checked + .reward-toggle-slider::before {
+  transform: translateX(24px);
+}
+
+.reward-toggle-switch input:focus + .reward-toggle-slider {
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.25);
+}
+
+/* Status badge */
+.admin-setting-status {
+  padding: 0 1.25rem 1rem;
+}
+
+.reward-status-badge {
+  display: inline-block;
+  padding: 0.3rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: all 0.3s ease;
+}
+
+.reward-status-on {
+  background: rgba(52, 199, 89, 0.15);
+  color: #34c759;
+}
+
+.reward-status-off {
+  background: rgba(255, 59, 48, 0.15);
+  color: #ff3b30;
+}
