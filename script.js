@@ -1578,6 +1578,7 @@ function calculateTimeBetweenVisits() {
   ALL_ENTRIES_CACHE.forEach(r => {
     if (!r.mobile || !r.date) return;
     const m = r.mobile;
+    if (m === '0000000000') return;
     if (!byMobile[m]) byMobile[m] = [];
     byMobile[m].push(new Date(r.date));
   });
