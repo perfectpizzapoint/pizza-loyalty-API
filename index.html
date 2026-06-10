@@ -42,6 +42,10 @@
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
     <span class="nav-text">Home</span>
   </button>
+  <button class="nav-btn" id="navDashboard" onclick="showSection('dashboard')">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    <span class="nav-text">Dashboard</span>
+  </button>
   <button class="nav-btn" id="navPos" onclick="showSection('pos')">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
     <span class="nav-text">POS</span>
@@ -49,10 +53,6 @@
   <button class="nav-btn" id="navAllEntries" onclick="showSection('allEntries')">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
     <span class="nav-text">Entries</span>
-  </button>
-  <button class="nav-btn" id="navDashboard" onclick="showSection('dashboard')">
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-    <span class="nav-text">Dashboard</span>
   </button>
   <button class="nav-btn" id="navAdmin" onclick="showSection('admin')">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
@@ -411,74 +411,72 @@
 
   <!-- ═══════ DASHBOARD SECTION (PUBLIC) ═══════ -->
   <section class="page-section wide" id="sectionDashboard">
-    <div class="dashboard-header">
-      <h2 class="dashboard-title">Overview</h2>
-      <div class="date-badge" id="currentDateBadge"></div>
-    </div>
 
-    <div class="stats-grid" id="statsGrid"></div>
-
-    <!-- Best Selling Dishes Analytics -->
-    <div class="dashboard-grid-equal mb-3">
-      <!-- Daily Top 5 -->
-      <div class="card chart-card">
-        <div class="chart-card__header flex-between">
-          <div class="chart-card__title">
-            <span class="icon">📈</span> Daily Top 5 Best-Sellers
-          </div>
-          <input type="date" id="bestSellersDateFilter" class="form-input" style="max-width: 150px; padding: 0.25rem 0.5rem; font-size: 0.85rem;" onchange="loadBestSellers()" />
-        </div>
-        <div class="table-responsive glass-table-wrap">
-          <table class="entry-table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Dish Name</th>
-                <th>Type/Flavour</th>
-                <th style="text-align: center;">Qty</th>
-              </tr>
-            </thead>
-            <tbody id="dailyBestSellersBody">
-              <!-- Injected here -->
-            </tbody>
-          </table>
-        </div>
+    <!-- ZONE A: COMMAND HEADER -->
+    <div class="dashboard-command-header" id="dashboardCommandHeader">
+      <div class="dashboard-command-header__left">
+        <h2 class="dashboard-title">Overview</h2>
+        <div class="date-badge" id="currentDateBadge"></div>
       </div>
-
-      <!-- Overall Top 5 -->
-      <div class="card chart-card">
-        <div class="chart-card__header">
-          <div class="chart-card__title">
-            <span class="icon">🏆</span> Overall Top 5 Best-Sellers
-          </div>
+      <div class="dashboard-command-header__right">
+        <div class="period-filter" id="periodFilter">
+          <button class="period-btn active" onclick="setDashboardPeriod('today', this)">Today</button>
+          <button class="period-btn" onclick="setDashboardPeriod('7d', this)">7 Days</button>
+          <button class="period-btn" onclick="setDashboardPeriod('30d', this)">30 Days</button>
+          <button class="period-btn" onclick="setDashboardPeriod('all', this)">All Time</button>
         </div>
-        <div class="table-responsive glass-table-wrap">
-          <table class="entry-table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Dish Name</th>
-                <th>Type/Flavour</th>
-                <th style="text-align: center;">Qty</th>
-              </tr>
-            </thead>
-            <tbody id="overallBestSellersBody">
-              <!-- Injected here -->
-            </tbody>
-          </table>
-        </div>
+        <span class="last-synced" id="lastSyncedLabel"></span>
       </div>
     </div>
 
-    <div class="dashboard-grid">
-      <!-- Main Column -->
-      <div class="dashboard-main">
-        <!-- Month-Day Heatmap -->
+    <!-- ZONE B: KPI STRIP -->
+    <div class="kpi-strip" id="kpiStrip">
+      <!-- Cards injected by renderKpiStrip() -->
+    </div>
+
+    <!-- ZONE C + D: MAIN GRID -->
+    <div class="dashboard-grid-new">
+
+      <!-- MAIN COLUMN -->
+      <div class="dashboard-main-new">
+
+        <!-- C1: Revenue Trend -->
+        <div class="card chart-card mb-3">
+          <div class="chart-card__header flex-between">
+            <div class="chart-card__title"><span class="icon">📈</span> Revenue Trend</div>
+          </div>
+          <div class="chart-wrap"><canvas id="chartRevenueTrend" height="200"></canvas></div>
+        </div>
+
+        <!-- C2: Payment Breakdown -->
         <div class="card chart-card mb-3">
           <div class="chart-card__header">
-            <div class="chart-card__title">
-              <span class="icon">📅</span> Month vs Day Activity Heatmap
+            <div class="chart-card__title"><span class="icon">💳</span> Payment Breakdown</div>
+          </div>
+          <div class="chart-wrap"><canvas id="chartPaymentBreakdown" height="160"></canvas></div>
+        </div>
+
+        <!-- C3: Best Sellers (side by side) -->
+        <div class="dashboard-grid-equal mb-3">
+          <div class="card chart-card">
+            <div class="chart-card__header flex-between">
+              <div class="chart-card__title"><span class="icon">📈</span> Today's Top 5</div>
+              <input type="date" id="bestSellersDateFilter" class="form-input date-mini" onchange="loadBestSellers()" />
             </div>
+            <div id="dailyBestSellersList"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-card__header">
+              <div class="chart-card__title"><span class="icon">🏆</span> All-Time Top 5</div>
+            </div>
+            <div id="overallBestSellersList"></div>
+          </div>
+        </div>
+
+        <!-- C4: Month-Day Heatmap (existing, unchanged HTML) -->
+        <div class="card chart-card mb-3">
+          <div class="chart-card__header flex-between">
+            <div class="chart-card__title"><span class="icon">📅</span> Monthly Activity Heatmap</div>
             <div class="toggle-row" id="mdHeatmapToggle">
               <button class="toggle-btn" onclick="setMdHeatmapType('entries', this)">Entries</button>
               <button class="toggle-btn active" onclick="setMdHeatmapType('amount', this)">Amount</button>
@@ -487,70 +485,89 @@
               <button class="toggle-btn" onclick="setMdHeatmapType('card', this)">Card</button>
             </div>
           </div>
-
-          <div class="heatmap-wrapper">
-            <div id="mdHeatmapContainer"></div>
-          </div>
+          <div class="heatmap-wrapper"><div id="mdHeatmapContainer"></div></div>
         </div>
 
-        <!-- Heatmap -->
-        <div class="card chart-card">
-          <div class="chart-card__header">
-            <div class="chart-card__title">
-              <span class="icon">🔥</span> Day-Hour Activity Heatmap
-            </div>
+        <!-- C5: Peak Hours Map (PROMOTED - was Day-Hour Heatmap) -->
+        <div class="card chart-card mb-3">
+          <div class="chart-card__header flex-between">
+            <div class="chart-card__title"><span class="icon">🔥</span> Peak Hours Map</div>
             <div class="toggle-row" id="heatmapToggle">
               <button class="toggle-btn" onclick="setHeatmapType('entries', this)">Entries</button>
               <button class="toggle-btn active" onclick="setHeatmapType('amount', this)">Amount</button>
             </div>
           </div>
-
-          <div class="heatmap-wrapper">
-            <div id="heatmapContainer"></div>
-          </div>
+          <div class="heatmap-wrapper"><div id="heatmapContainer"></div></div>
+          <div class="peak-callout" id="peakHoursCallout"></div>
         </div>
 
-        <!-- Time Between Visits -->
-        <div class="card chart-card">
+        <!-- C6: Time Between Visits -->
+        <div class="card chart-card mb-3">
           <div class="chart-card__header">
-            <div class="chart-card__title">
-              <span class="icon">⏱️</span> Time Between Visits
-            </div>
+            <div class="chart-card__title"><span class="icon">⏱️</span> Revisit Frequency</div>
           </div>
           <div id="tbvContainer" class="hidden">
             <div class="tbv-stats-mini" id="tbvStats"></div>
             <div class="chart-wrap mt-3"><canvas id="chartTBV"></canvas></div>
           </div>
         </div>
+
       </div>
 
-      <!-- Sidebar Column -->
-      <div class="dashboard-sidebar">
-        <!-- Today toggle -->
-        <div class="card chart-card highlight-card">
-          <div class="chart-card__header">
-            <div class="chart-card__title">📅 Today's Summary</div>
+      <!-- SIDEBAR COLUMN -->
+      <div class="dashboard-sidebar-new">
+
+        <!-- D1: Today's Summary (HERO SIDEBAR CARD) -->
+        <div class="card chart-card today-hero-card mb-3">
+          <div class="chart-card__header flex-between">
+            <div class="chart-card__title">📅 Today</div>
             <div class="toggle-row mini" id="todayToggle">
               <button class="toggle-btn active" onclick="setTodayView('entries', this)">#</button>
               <button class="toggle-btn" onclick="setTodayView('amount', this)">₹</button>
             </div>
           </div>
           <div id="todayValue" class="huge-value"></div>
+          <div id="todayDelta" class="today-delta"></div>
         </div>
 
-        <!-- Repeat vs New -->
-        <div class="card chart-card">
-          <div class="chart-card__title mb-3">👥 Customer Base</div>
-          <div class="chart-wrap donut-wrap"><canvas id="chartRepeatNew"></canvas></div>
+        <!-- D2: Payment Mix Donut -->
+        <div class="card chart-card mb-3">
+          <div class="chart-card__title mb-3">💳 Payment Mix</div>
+          <div class="chart-wrap donut-wrap"><canvas id="chartPaymentDonut"></canvas></div>
+          <div class="payment-mix-totals" id="paymentMixTotals"></div>
         </div>
 
-        <!-- Top Repeat Customers -->
+        <!-- D3: Customer Base -->
+        <div class="card chart-card mb-3">
+          <div class="chart-card__title mb-3">👥 Customer Tiers</div>
+          <div class="chart-wrap donut-wrap"><canvas id="chartCustomerTiers"></canvas></div>
+          <div class="tier-pills" id="tierPills"></div>
+        </div>
+
+        <!-- D4: Top Loyalists -->
         <div class="card chart-card">
-          <div class="chart-card__title mb-3">🏆 Top Loyalists</div>
+          <div class="chart-card__header flex-between">
+            <div class="chart-card__title">🏆 Top Loyalists</div>
+            <select class="sort-mini" id="loyalistSort" onchange="renderTopLoyalists()">
+              <option value="visits">By Visits</option>
+              <option value="revenue">By Revenue</option>
+            </select>
+          </div>
           <ul class="top-list" id="topCustomersList"></ul>
         </div>
+
       </div>
     </div>
+
+    <!-- ZONE E: RECENT ACTIVITY FEED -->
+    <div class="card chart-card mt-3">
+      <div class="chart-card__header flex-between">
+        <div class="chart-card__title"><span class="icon">🕐</span> Recent Transactions</div>
+        <button class="btn btn--ghost btn--sm" onclick="showSection('allEntries')">View All →</button>
+      </div>
+      <div id="recentActivityFeed" class="activity-feed"></div>
+    </div>
+
   </section>
 </main>
 
