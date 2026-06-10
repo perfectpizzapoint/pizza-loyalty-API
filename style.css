@@ -43,6 +43,28 @@
   --shape-1: #FF4B2B;
   --shape-2: #FF416C;
   --shape-3: #FCA5A5;
+
+  /* Dashboard variables */
+  --revenue-positive: #22c55e;       /* green for ↑ delta */
+  --revenue-negative: #ef4444;       /* red for ↓ delta */
+  --revenue-neutral: #94a3b8;        /* gray for → delta */
+
+  --kpi-hero-bg: linear-gradient(135deg, #e85d04 0%, #faa307 100%);
+  --kpi-hero-text: #ffffff;
+
+  --chart-cash: #10B981;             /* green - cash */
+  --chart-upi: #6366F1;              /* indigo - UPI */
+  --chart-card: #FF4B2B;             /* brand orange/red - card */
+
+  --chart-fill-start: rgba(232, 93, 4, 0.25);
+  --chart-fill-end: rgba(232, 93, 4, 0.0);
+
+  --loyalist-champion: #e85d04;      /* top tier */
+  --loyalist-regular: #f48c06;       /* mid tier */
+  --loyalist-new: #d1d5db;           /* new customers */
+
+  --sparkline-line: #e85d04;
+  --sparkline-bg: transparent;
 }
 
 [data-theme="dark"] {
@@ -712,7 +734,11 @@ a { color: var(--brand-primary); text-decoration: none; }
 .top-list li:nth-child(3) .top-list__rank { background: linear-gradient(135deg, #FDBA74, #D97706); color: #78350F; }
 
 /* Heatmap */
-.heatmap-wrapper { overflow-x: auto; padding-bottom: 1rem; }
+.heatmap-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 8px;
+}
 .heatmap-grid { display: grid; grid-template-columns: 40px repeat(24, 1fr); gap: 3px; font-size: 0.7rem; min-width: 600px; }
 .heatmap-label { display: flex; align-items: center; font-weight: 600; color: var(--text-muted); justify-content: flex-end; padding-right: 8px; }
 .heatmap-header { text-align: center; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
@@ -727,6 +753,22 @@ a { color: var(--brand-primary); text-decoration: none; }
   font-size: 0.75rem; font-weight: 600; white-space: nowrap; box-shadow: var(--shadow-elevated); z-index: 20;
 }
 .heatmap-cell:hover .heatmap-tooltip { display: block; animation: fadeIn 0.2s; }
+
+/* Tooltip edge adjustments to prevent clipping */
+.heatmap-cell.edge-left .heatmap-tooltip {
+  left: 0;
+  transform: none;
+}
+.heatmap-cell.edge-right .heatmap-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.heatmap-cell.edge-top .heatmap-tooltip {
+  bottom: auto;
+  top: calc(100% + 5px);
+}
+
 
 /* Month-Day Heatmap */
 .md-heatmap-grid {
@@ -1674,3 +1716,321 @@ body.split-active.dragging .modal-overlay {
   background: rgba(255, 59, 48, 0.15);
   color: #ff3b30;
 }
+
+/* ══════════════════════════════════════════════════
+   NEW ADDITIONS FOR DASHBOARD REDESIGN
+   ══════════════════════════════════════════════════ */
+
+/* Dashboard command header */
+.dashboard-command-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-card);
+  position: sticky;
+  top: 60px;
+  background: var(--bg-body);
+  z-index: 40;
+  padding-top: 8px;
+}
+.dashboard-command-header__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.last-synced {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Period Filter Toggle */
+.period-filter {
+  display: flex;
+  background: var(--bg-input);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+.period-btn {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.period-btn.active {
+  background: var(--bg-card);
+  color: var(--brand-primary);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+/* KPI strip */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+  overflow-x: auto;   /* allows horizontal scroll on very small screens */
+}
+@container (max-width: 992px) {
+  .kpi-strip {
+    grid-template-columns: repeat(3, 1fr);  /* 3 cols on tablet */
+  }
+  .kpi-card--hero { grid-column: span 3; }  /* hero full-width on tablet */
+}
+@container (max-width: 600px) {
+  .kpi-strip {
+    grid-template-columns: repeat(2, 1fr);  /* 2 cols on mobile */
+  }
+  .kpi-card--hero { grid-column: span 2; }
+}
+
+/* New dashboard grid (main + sidebar) */
+.dashboard-grid-new {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+}
+.dashboard-grid-new > div {
+  min-width: 0;
+}
+@container (max-width: 992px) {
+  .dashboard-grid-new {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* KPI cards */
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 16px;
+  padding: 18px 20px;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.1);
+}
+.kpi-card--hero {
+  background: linear-gradient(135deg, #e85d04 0%, #faa307 100%);
+  color: white;
+  grid-column: span 2;
+}
+.kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.kpi-card--hero .kpi-label { color: rgba(255,255,255,0.75); }
+.kpi-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-primary);
+}
+.kpi-card--hero .kpi-value { font-size: 36px; color: white; }
+.kpi-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  margin-top: 8px;
+  align-self: flex-start;
+}
+.kpi-delta.up   { color: #22c55e; background: rgba(34, 197, 94, 0.12); }
+.kpi-delta.down { color: #ef4444; background: rgba(239, 68, 68, 0.12); }
+.kpi-delta.flat { color: var(--text-muted); background: var(--bg-input); }
+.kpi-card--hero .kpi-delta { background: rgba(255,255,255,0.2); color: white; }
+.kpi-sparkline { margin-top: 10px; opacity: 0.65; display: block; }
+
+/* Today hero sidebar card */
+.today-hero-card {
+  background: linear-gradient(160deg, var(--bg-card) 0%, rgba(232,93,4,0.06) 100%);
+}
+.today-delta {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+.today-delta.positive { color: #22c55e; }
+.today-delta.negative { color: #ef4444; }
+
+/* Best sellers ranked list */
+.best-seller-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-card);
+}
+.best-seller-row:last-child { border-bottom: none; }
+.bs-rank { font-size: 18px; min-width: 28px; text-align: center; }
+.bs-info { flex: 1; overflow: hidden; }
+.bs-name { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.bs-name em { font-style: normal; color: var(--text-muted); font-size: 11px; }
+.bs-bar-wrap { height: 4px; background: var(--bg-input); border-radius: 2px; margin-top: 5px; }
+.bs-bar { height: 4px; background: linear-gradient(90deg, #e85d04, #faa307); border-radius: 2px; transition: width 0.4s ease; }
+.bs-count { font-size: 13px; font-weight: 700; color: var(--brand-primary); min-width: 32px; text-align: right; }
+
+/* Activity feed */
+.activity-feed { display: flex; flex-direction: column; gap: 0; }
+.activity-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 80px 32px 1fr;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border-card);
+  align-items: center;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.activity-row:last-child { border-bottom: none; }
+.activity-row:hover { background: var(--bg-input); border-radius: 8px; }
+.activity-time { color: var(--text-muted); font-size: 11px; }
+.activity-customer { font-weight: 500; }
+.activity-amount { font-weight: 700; color: var(--brand-primary); text-align: right; }
+.activity-mode { text-align: center; font-size: 16px; }
+.activity-items { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* New activity row animation */
+.activity-row--new {
+  opacity: 0;
+  transform: translateY(-8px);
+  background: rgba(232, 93, 4, 0.06);
+  transition: opacity 0.4s, transform 0.4s, background 0.8s;
+}
+.activity-row--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@container (max-width: 600px) {
+  .activity-row {
+    grid-template-columns: 1fr 70px 28px;
+    grid-template-rows: auto auto;
+  }
+  .activity-time { grid-column: 1; font-size: 10px; }
+  .activity-amount { grid-column: 2; }
+  .activity-mode { grid-column: 3; }
+  .activity-customer { grid-row: 2; grid-column: 1; }
+  .activity-items { grid-row: 2; grid-column: 2 / span 2; }
+}
+
+/* Payment mix totals */
+.payment-mix-totals {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-top: 12px;
+  gap: 4px;
+}
+.payment-mix-totals span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.payment-mix-totals .mix-label { color: var(--text-muted); font-size: 10px; }
+.payment-mix-totals .mix-value { font-weight: 700; color: var(--text-primary); }
+
+/* Tier pills */
+.tier-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.tier-pill {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Peak callout */
+.peak-callout {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: rgba(232, 93, 4, 0.08);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--brand-primary);
+}
+
+/* Date mini input */
+.date-mini {
+  max-width: 140px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+/* Sort mini dropdown */
+.sort-mini {
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: 'Outfit', sans-serif;
+  cursor: pointer;
+}
+
+/* Top loyalists redesign */
+.top-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 16px;
+}
+
+/* ───── Toned Down "Without Mobile Number" Button ───── */
+#btnWithoutMobile {
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px;
+  opacity: 0.8;
+  margin-top: 0.75rem !important;
+  padding: 0.25rem !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+#btnWithoutMobile:hover {
+  color: var(--text-secondary) !important;
+  opacity: 1;
+  background: transparent !important;
+}
+
+/* ───── Split View Narrow Modal Overlay Override ───── */
+body.split-active.split-overlay-full .modal-overlay {
+  right: 0 !important;
+  z-index: 10000 !important;
+}
+
+
