@@ -14,6 +14,7 @@ let LAST_ENTRY_RESULT = null;
 let ADMIN_DATA = null;
 let ADMIN_AUTHENTICATED = false;
 let ALL_ENTRIES_CACHE = [];
+let DASHBOARD_PERIOD = '7d'; // 'today' | '7d' | '30d' | 'all'
 
 // ──── GOOGLE SHEET CACHE SYSTEM ────
 const CACHE_KEY_PREFIX = 'ppp_sheet_cache_';
@@ -49,6 +50,14 @@ function getCacheItem(cacheKey) {
     return null;
   }
 }
+
+/** Load cached data into memory variables on startup */
+function initializeMemoryFromCache() {
+  APP_CONFIG = getCacheItem('getConfig');
+  ALL_ENTRIES_CACHE = getCacheItem('getAllEntries') || [];
+  ADMIN_DATA = getCacheItem('getAdminData');
+}
+initializeMemoryFromCache();
 
 /** Build a unique cache key from API params */
 function buildCacheKey(params) {
@@ -113,6 +122,10 @@ async function downloadSheetCache(silent = false) {
     // Set the cache timestamp
     localStorage.setItem(CACHE_TIMESTAMP_KEY, String(Date.now()));
 
+    if (document.getElementById('sectionDashboard') && document.getElementById('sectionDashboard').classList.contains('active')) {
+      renderAllDashboardComponents();
+    }
+
     if (!silent) toast('✅ Data cached successfully! App will use cached data.', 'success');
   } catch (e) {
     console.error('Cache download failed', e);
@@ -147,6 +160,13 @@ function updateNavDockResponsive() {
     } else {
       dock.classList.remove('nav-icon-only');
     }
+  }
+
+  // Handle narrow split view to overlay modals full-screen
+  if (isSplitActive && remainingWidth < 500) {
+    body.classList.add('split-overlay-full');
+  } else {
+    body.classList.remove('split-overlay-full');
   }
   
   // Re-position active page indicator line after button widths adjust
@@ -209,13 +229,58 @@ function renderMdHeatmap(matrix) {
         ? 'var(--dot-empty)'
         : 'rgba(232, 93, 4, ' + (0.15 + intensity * 0.85) + ')';
       const displayVal = mdHeatmapType === 'entries' ? val : '₹' + val;
-      html += '<div class="heatmap-cell" style="background:' + bg + '">' +
+
+      let cellClasses = ['heatmap-cell'];
+      if (d < 4) cellClasses.push('edge-left');
+      if (d > 26) cellClasses.push('edge-right');
+      if (m < 2) cellClasses.push('edge-top');
+      const classAttr = cellClasses.join(' ');
+
+      html += '<div class="' + classAttr + '" style="background:' + bg + '; cursor: pointer;" onclick="selectHeatmapDate(' + m + ', ' + d + ')">' +
         '<div class="heatmap-tooltip">' + months[m] + ' ' + (d + 1) + ' — ' + displayVal + '</div>' +
         '</div>';
     }
   }
   html += '</div>';
   container.innerHTML = html;
+}
+
+function selectHeatmapDate(monthIndex, dayIndex) {
+  let year = new Date().getFullYear();
+  if (ALL_ENTRIES_CACHE && ALL_ENTRIES_CACHE.length > 0) {
+    const matchedEntry = ALL_ENTRIES_CACHE.find(e => {
+      if (!e.date) return false;
+      const parts = e.date.split('-');
+      return parts.length === 3 && (parseInt(parts[1], 10) - 1) === monthIndex && (parseInt(parts[2], 10) - 1) === dayIndex;
+    });
+    if (matchedEntry) {
+      year = parseInt(matchedEntry.date.split('-')[0], 10);
+    } else {
+      const latestDate = ALL_ENTRIES_CACHE[0].date;
+      if (latestDate && latestDate.includes('-')) {
+        year = parseInt(latestDate.split('-')[0], 10);
+      }
+    }
+  }
+
+  const mm = String(monthIndex + 1).padStart(2, '0');
+  const dd = String(dayIndex + 1).padStart(2, '0');
+  const dateStr = `${year}-${mm}-${dd}`;
+
+  const dateInput = document.getElementById('bestSellersDateFilter');
+  if (dateInput) {
+    dateInput.value = dateStr;
+    loadBestSellers();
+    
+    // Smooth scroll to the Best Sellers card
+    const bestSellersCard = dateInput.closest('.card');
+    if (bestSellersCard) {
+      bestSellersCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    toast(`Filtered Today's Top 5 for ${monthNames[monthIndex]} ${dayIndex + 1}, ${year}`, 'success');
+  }
 }
 
 // ──── HARDCODED WHATSAPP TEMPLATE (removes admin dependency) ────
@@ -522,6 +587,20 @@ function checkAmountAndToggleButtons() {
   const btnReceipt = document.getElementById('btnReceiptOnly');
   const btnClaim = document.getElementById('btnClaimForce');
 
+  // If mobile is the default "no mobile" number, always show only the Receipt button
+  const dispMobile = document.getElementById('dispMobile');
+  const mobile = dispMobile ? dispMobile.value.trim() : '';
+  if (mobile === '0000000000') {
+    btnSave.style.display = 'none';
+    btnReceipt.style.display = '';
+    btnClaim.style.display = 'none';
+    if (!isNaN(amount) && amount > 0) {
+      hideErr('errAmount');
+      amountInput.classList.remove('error');
+    }
+    return;
+  }
+
   // If reward system is OFF, always show only the Receipt button
   const rewardOn = APP_CONFIG ? APP_CONFIG.rewardSystemOn !== false : true;
   if (!rewardOn) {
@@ -769,6 +848,29 @@ async function handleSaveEntry() {
     localStorage.removeItem('ppp_loyalty_amount');
     localStorage.removeItem('ppp_loyalty_message');
     localStorage.removeItem('ppp_pendingOrderItems');
+
+    // Optimistically update cache
+    const newCacheEntry = {
+      mobile: mobile,
+      numEntries: null,
+      amount: amount,
+      date: date,
+      time: time,
+      cash: payAmts.cashAmt,
+      upi: payAmts.upiAmt,
+      card: payAmts.cardAmt,
+      orderItems: orderItems,
+      source: 'bill'
+    };
+    ALL_ENTRIES_CACHE.unshift(newCacheEntry);
+    setCacheItem('getAllEntries', ALL_ENTRIES_CACHE);
+    
+    if (document.getElementById('sectionDashboard') && document.getElementById('sectionDashboard').classList.contains('active')) {
+      prependActivityRow(newCacheEntry);
+      setTimeout(() => {
+        loadDashboardData();
+      }, 1000);
+    }
     
     try {
       const result = await api({ action: 'addbillEntry', mobile, amount, date, time, message, cashAmt: payAmts.cashAmt, upiAmt: payAmts.upiAmt, cardAmt: payAmts.cardAmt, orderItems });
@@ -871,7 +973,10 @@ async function handleSaveEntry() {
     
     // Refresh currently open sections if needed
     if (document.getElementById('sectionDashboard').classList.contains('active')) {
-      loadDashboardData();
+      prependActivityRow(newCacheEntry);
+      setTimeout(() => {
+        loadDashboardData();
+      }, 1000);
     } else if (document.getElementById('sectionAllEntries') && document.getElementById('sectionAllEntries').classList.contains('active')) {
       loadAllEntries();
     }
@@ -917,6 +1022,29 @@ async function handleReceiptOnly() {
     localStorage.removeItem('ppp_loyalty_amount');
     localStorage.removeItem('ppp_loyalty_message');
     localStorage.removeItem('ppp_pendingOrderItems');
+    
+    // Optimistically update cache
+    const newCacheEntry = {
+      mobile: mobile,
+      numEntries: null,
+      amount: amount,
+      date: date,
+      time: time,
+      cash: payAmts.cashAmt,
+      upi: payAmts.upiAmt,
+      card: payAmts.cardAmt,
+      orderItems: orderItems,
+      source: 'bill'
+    };
+    ALL_ENTRIES_CACHE.unshift(newCacheEntry);
+    setCacheItem('getAllEntries', ALL_ENTRIES_CACHE);
+    
+    if (document.getElementById('sectionDashboard') && document.getElementById('sectionDashboard').classList.contains('active')) {
+      prependActivityRow(newCacheEntry);
+      setTimeout(() => {
+        loadDashboardData();
+      }, 1000);
+    }
     
     try {
       await api({
@@ -991,7 +1119,10 @@ async function handleReceiptOnly() {
     
     // Refresh currently open sections if needed
     if (document.getElementById('sectionDashboard').classList.contains('active')) {
-      loadDashboardData();
+      prependActivityRow(newCacheEntry);
+      setTimeout(() => {
+        loadDashboardData();
+      }, 1000);
     } else if (document.getElementById('sectionAllEntries') && document.getElementById('sectionAllEntries').classList.contains('active')) {
       loadAllEntries();
     }
@@ -1447,43 +1578,1074 @@ async function handleAdminLogin() {
 // ──── Dashboard Render ────
 let todayView = 'entries';
 
-function renderAdminDashboard(data) {
-  if (!data) return;
-
-  const grid = document.getElementById('statsGrid');
-  const stats = [
-    { label: 'Total Customers', value: data.totalCustomers, icon: '👥' },
-    { label: 'Total Visits', value: data.totalVisits, icon: '📊' },
-    { label: 'Rewards Given', value: data.rewardsGiven, icon: '🎁' },
-    { label: 'Rewards Pending', value: data.rewardsPending, icon: '⏳' },
-    { label: 'Avg Billing', value: '₹' + data.avgBilling, icon: '💰' },
-    { label: 'Avg Visits/Cust', value: data.avgVisits, icon: '🔄' },
-    { label: 'Reward Conv. Rate', value: data.conversionRate + '%', icon: '📈' },
-  ];
-
-  grid.innerHTML = stats.map(s =>
-    '<div class="stat-card">' +
-    '<div class="stat-card__value">' + s.icon + ' ' + s.value + '</div>' +
-    '<div class="stat-card__label">' + s.label + '</div>' +
-    '</div>'
-  ).join('');
-
-  // Today's value
-  renderTodayValue(data);
-
-  // Repeat vs New chart
-  renderRepeatNewChart(data);
-
-  // Top customers
-  renderTopCustomers(data.topCustomers);
+function setDashboardPeriod(period, btn) {
+  DASHBOARD_PERIOD = period;
+  // Update active state on buttons
+  document.querySelectorAll('#periodFilter .period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  // Re-render everything
+  renderAllDashboardComponents();
 }
 
-function renderTodayValue(data) {
-  const el = document.getElementById('todayValue');
-  if (todayView === 'entries') {
-    el.textContent = data.todayCount + ' entries';
+function renderAllDashboardComponents() {
+  const entries = getFilteredEntries();
+  
+  try {
+    renderKpiStrip(entries);
+  } catch (e) {
+    console.error('Error rendering KPI Strip:', e);
+  }
+  
+  try {
+    renderRevenueTrendChart(entries);
+  } catch (e) {
+    console.error('Error rendering Revenue Trend Chart:', e);
+  }
+  
+  try {
+    renderPaymentBreakdownChart(entries);
+  } catch (e) {
+    console.error('Error rendering Payment Breakdown Chart:', e);
+  }
+  
+  try {
+    renderPaymentDonut(entries);
+  } catch (e) {
+    console.error('Error rendering Payment Donut Chart:', e);
+  }
+  
+  try {
+    renderBestSellers(entries);
+  } catch (e) {
+    console.error('Error rendering Best Sellers:', e);
+  }
+  
+  try {
+    renderTodaySummaryCard();
+  } catch (e) {
+    console.error('Error rendering Today Summary Card:', e);
+  }
+  
+  try {
+    renderCustomerBase(entries);
+  } catch (e) {
+    console.error('Error rendering Customer Base Chart:', e);
+  }
+  
+  try {
+    renderTopLoyalists();
+  } catch (e) {
+    console.error('Error rendering Top Loyalists:', e);
+  }
+  
+  try {
+    renderRecentActivity();
+  } catch (e) {
+    console.error('Error rendering Recent Activity:', e);
+  }
+  
+  try {
+    calculateMdHeatmap();
+  } catch (e) {
+    console.error('Error rendering Month-Day Heatmap:', e);
+  }
+  
+  try {
+    calculateHeatmap();
+  } catch (e) {
+    console.error('Error rendering Peak Hours Map:', e);
+  }
+  
+  try {
+    calculateTimeBetweenVisits();
+  } catch (e) {
+    console.error('Error rendering Revisit Frequency Chart:', e);
+  }
+  
+  try {
+    updateLastSyncedLabel();
+  } catch (e) {
+    console.error('Error updating sync label:', e);
+  }
+}
+
+function updateLastSyncedLabel() {
+  const label = document.getElementById('lastSyncedLabel');
+  if (!label) return;
+  
+  const ts = localStorage.getItem(CACHE_TIMESTAMP_KEY);
+  if (!ts) {
+    label.textContent = 'Last synced: Never';
+    return;
+  }
+  
+  const diffMs = Date.now() - Number(ts);
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) {
+    label.textContent = 'Last synced: Just now';
+  } else if (diffMins === 1) {
+    label.textContent = 'Last synced: 1 min ago';
+  } else if (diffMins < 60) {
+    label.textContent = `Last synced: ${diffMins} mins ago`;
   } else {
-    el.textContent = '₹' + data.todayAmount;
+    const diffHours = Math.floor(diffMins / 60);
+    label.textContent = `Last synced: ${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+  }
+}
+
+if (!window.lastSyncedInterval) {
+  window.lastSyncedInterval = setInterval(() => {
+    const section = document.getElementById('sectionDashboard');
+    if (section && section.classList.contains('active')) {
+      updateLastSyncedLabel();
+    }
+  }, 30000);
+}
+
+function getFilteredEntries() {
+  const today = istDateStr();
+  const now = new Date();
+  
+  switch (DASHBOARD_PERIOD) {
+    case 'today':
+      return ALL_ENTRIES_CACHE.filter(e => e.date === today);
+    case '7d':
+      const d7 = new Date(now);
+      d7.setDate(d7.getDate() - 7);
+      const d7Str = d7.toISOString().split('T')[0];
+      return ALL_ENTRIES_CACHE.filter(e => e.date >= d7Str);
+    case '30d':
+      const d30 = new Date(now);
+      d30.setDate(d30.getDate() - 30);
+      const d30Str = d30.toISOString().split('T')[0];
+      return ALL_ENTRIES_CACHE.filter(e => e.date >= d30Str);
+    case 'all':
+    default:
+      return ALL_ENTRIES_CACHE;
+  }
+}
+
+function getPriorPeriodEntries() {
+  const today = istDateStr();
+  const now = new Date();
+  
+  switch (DASHBOARD_PERIOD) {
+    case 'today':
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      return ALL_ENTRIES_CACHE.filter(e => e.date === yesterdayStr);
+    case '7d':
+      const d7 = new Date(now);
+      d7.setDate(d7.getDate() - 7);
+      const d7Str = d7.toISOString().split('T')[0];
+      const d14 = new Date(now);
+      d14.setDate(d14.getDate() - 14);
+      const d14Str = d14.toISOString().split('T')[0];
+      return ALL_ENTRIES_CACHE.filter(e => e.date >= d14Str && e.date < d7Str);
+    case '30d':
+      const d30 = new Date(now);
+      d30.setDate(d30.getDate() - 30);
+      const d30Str = d30.toISOString().split('T')[0];
+      const d60 = new Date(now);
+      d60.setDate(d60.getDate() - 60);
+      const d60Str = d60.toISOString().split('T')[0];
+      return ALL_ENTRIES_CACHE.filter(e => e.date >= d60Str && e.date < d30Str);
+    case 'all':
+    default:
+      return [];
+  }
+}
+
+function computeKpiData(entries) {
+  const today = istDateStr();
+  const yesterday = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  })();
+
+  const todayEntries = ALL_ENTRIES_CACHE.filter(e => e.date === today);
+  const yesterdayEntries = ALL_ENTRIES_CACHE.filter(e => e.date === yesterday);
+
+  const todayRevenue = todayEntries.reduce((s, e) => s + (e.amount || 0), 0);
+  const yesterdayRevenue = yesterdayEntries.reduce((s, e) => s + (e.amount || 0), 0);
+  const todayRevenueΔ = yesterdayRevenue > 0
+    ? Math.round(((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100)
+    : null;
+
+  const periodRevenue = entries.reduce((s, e) => s + (e.amount || 0), 0);
+  const periodCount = entries.length;
+  const periodAvg = periodCount > 0 ? Math.round(periodRevenue / periodCount) : 0;
+
+  // Prior period for delta
+  const priorEntries = getPriorPeriodEntries();
+  const priorRevenue = priorEntries.reduce((s, e) => s + (e.amount || 0), 0);
+  const periodRevenueΔ = priorRevenue > 0
+    ? Math.round(((periodRevenue - priorRevenue) / priorRevenue) * 100)
+    : null;
+
+  // Sparkline: last 7 days daily revenue
+  const sparkData = getLast7DaysDailyRevenue();
+
+  return {
+    todayRevenue, todayRevenueΔ, todayCount: todayEntries.length,
+    periodRevenue, periodRevenueΔ, periodCount, periodAvg,
+    sparkData
+  };
+}
+
+function getLast7DaysDailyRevenue() {
+  const result = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const dayTotal = ALL_ENTRIES_CACHE
+      .filter(e => e.date === dateStr)
+      .reduce((s, e) => s + (e.amount || 0), 0);
+    result.push(dayTotal);
+  }
+  return result;
+}
+
+function makeSparkline(dataArray, width = 80, height = 28) {
+  if (!dataArray || dataArray.length < 2) return '';
+  const max = Math.max(...dataArray);
+  const min = Math.min(...dataArray);
+  const range = max - min || 1;
+  const step = width / (dataArray.length - 1);
+  const points = dataArray.map((v, i) => {
+    const x = i * step;
+    const y = height - ((v - min) / range) * height;
+    return `${x},${y}`;
+  }).join(' ');
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" class="kpi-sparkline">
+    <polyline points="${points}" fill="none" stroke="var(--sparkline-line)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+function renderKpiStrip(entries) {
+  const kpi = computeKpiData(entries);
+  const totalCustomers = ADMIN_DATA ? ADMIN_DATA.totalCustomers : 0;
+  const rewardsGiven = ADMIN_DATA ? ADMIN_DATA.rewardsGiven : 0;
+  const conversionRate = ADMIN_DATA ? ADMIN_DATA.conversionRate : 0;
+
+  const container = document.getElementById('kpiStrip');
+  if (!container) return;
+
+  const todayDeltaHtml = kpi.todayRevenueΔ !== null
+    ? (kpi.todayRevenueΔ >= 0
+        ? `<span class="kpi-delta up">↑ +${kpi.todayRevenueΔ}%</span>`
+        : `<span class="kpi-delta down">↓ ${kpi.todayRevenueΔ}%</span>`)
+    : '';
+
+  const periodDeltaHtml = kpi.periodRevenueΔ !== null
+    ? (kpi.periodRevenueΔ >= 0
+        ? `<span class="kpi-delta up">↑ +${kpi.periodRevenueΔ}%</span>`
+        : `<span class="kpi-delta down">↓ ${kpi.periodRevenueΔ}%</span>`)
+    : '';
+
+  // Get period label
+  let periodLabel = 'Period';
+  if (DASHBOARD_PERIOD === '7d') periodLabel = '7 Days';
+  else if (DASHBOARD_PERIOD === '30d') periodLabel = '30 Days';
+  else if (DASHBOARD_PERIOD === 'all') periodLabel = 'All-Time';
+  else if (DASHBOARD_PERIOD === 'today') periodLabel = 'Today';
+
+  const html = `
+    <!-- Card 1: Today's Revenue (Hero) -->
+    <div class="kpi-card kpi-card--hero">
+      <div>
+        <div class="kpi-label">Today's Revenue</div>
+        <div class="kpi-value">₹${kpi.todayRevenue.toLocaleString('en-IN')}</div>
+      </div>
+      <div>
+        ${todayDeltaHtml}
+        ${makeSparkline(kpi.sparkData, 120, 32)}
+      </div>
+    </div>
+
+    <!-- Card 2: Period Revenue -->
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">${periodLabel} Revenue</div>
+        <div class="kpi-value">₹${kpi.periodRevenue.toLocaleString('en-IN')}</div>
+      </div>
+      <div>
+        ${periodDeltaHtml}
+        ${makeSparkline(kpi.sparkData, 80, 24)}
+      </div>
+    </div>
+
+    <!-- Card 3: Today's Orders -->
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">Today's Orders</div>
+        <div class="kpi-value">${kpi.todayCount}</div>
+      </div>
+      <div>
+        <span class="kpi-label" style="font-size:10px; margin-top:8px; display:block;">Live orders</span>
+      </div>
+    </div>
+
+    <!-- Card 4: Total Customers -->
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">Total Customers</div>
+        <div class="kpi-value">${totalCustomers.toLocaleString('en-IN')}</div>
+      </div>
+      <div>
+        <span class="kpi-label" style="font-size:10px; margin-top:8px; display:block;">Registered</span>
+      </div>
+    </div>
+
+    <!-- Card 5: Avg Order Value -->
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">Avg Order Value</div>
+        <div class="kpi-value">₹${kpi.periodAvg.toLocaleString('en-IN')}</div>
+      </div>
+      <div>
+        <span class="kpi-label" style="font-size:10px; margin-top:8px; display:block;">Per order</span>
+      </div>
+    </div>
+
+    <!-- Card 6: Rewards Given -->
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">Rewards Given</div>
+        <div class="kpi-value">${rewardsGiven.toLocaleString('en-IN')}</div>
+      </div>
+      <div>
+        <span class="kpi-label" style="font-size:10px; margin-top:8px; display:block;">Loyalty free meals</span>
+      </div>
+    </div>
+
+    <!-- Card 7: Loyalty Conv. Rate -->
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">Loyalty Conv.</div>
+        <div class="kpi-value">${conversionRate}%</div>
+      </div>
+      <div>
+        <span class="kpi-label" style="font-size:10px; margin-top:8px; display:block;">Claim rate</span>
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+let revenueTrendChart = null;
+let paymentBreakdownChart = null;
+let paymentDonutChart = null;
+
+function renderRevenueTrendChart(entries) {
+  const canvas = document.getElementById('chartRevenueTrend');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (revenueTrendChart) revenueTrendChart.destroy();
+
+  const { labels, data } = getRevenueTrendData(entries);
+
+  revenueTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Revenue',
+        data,
+        borderColor: '#e85d04',
+        borderWidth: 2.5,
+        pointRadius: 3,
+        pointBackgroundColor: '#e85d04',
+        fill: true,
+        backgroundColor: (context) => {
+          const chart = context.chart;
+          const { ctx: chartCtx, chartArea } = chart;
+          if (!chartArea) return null;
+          const gradient = chartCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          gradient.addColorStop(0, 'rgba(232, 93, 4, 0.25)');
+          gradient.addColorStop(1, 'rgba(232, 93, 4, 0)');
+          return gradient;
+        },
+        tension: 0.4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 600 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => `₹${item.raw.toLocaleString('en-IN')}`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: (v) => v >= 1000 ? `₹${(v/1000).toFixed(1)}K` : `₹${v}`,
+            font: { family: 'Outfit', size: 11 }
+          },
+          grid: { color: 'rgba(0,0,0,0.05)' }
+        },
+        x: {
+          ticks: { font: { family: 'Outfit', size: 11 }, maxRotation: 30 },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
+function getRevenueTrendData(entries) {
+  if (DASHBOARD_PERIOD === 'today') {
+    // Hourly grouping
+    const hourly = Array(24).fill(0);
+    entries.forEach(e => {
+      if (!e.time) return;
+      const hour = parseInt(e.time.split(':')[0], 10);
+      if (hour >= 0 && hour < 24) hourly[hour] += e.amount || 0;
+    });
+    const labels = Array.from({length: 24}, (_, i) => `${i}:00`);
+    return { labels, data: hourly };
+  }
+  
+  if (DASHBOARD_PERIOD === '7d') {
+    return getDailyGrouped(entries, 7);
+  }
+
+  if (DASHBOARD_PERIOD === '30d') {
+    return getDailyGrouped(entries, 30);
+  }
+
+  // All time: monthly grouping
+  const monthly = {};
+  entries.forEach(e => {
+    if (!e.date) return;
+    const [year, month] = e.date.split('-');
+    const key = `${year}-${month}`;
+    monthly[key] = (monthly[key] || 0) + (e.amount || 0);
+  });
+  const keys = Object.keys(monthly).sort();
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return {
+    labels: keys.map(k => {
+      const [y, m] = k.split('-');
+      return `${monthNames[parseInt(m,10)-1]} '${y.slice(2)}`;
+    }),
+    data: keys.map(k => monthly[k])
+  };
+}
+
+function getDailyGrouped(entries, days) {
+  const labels = [];
+  const data = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const amount = entries
+      .filter(e => e.date === dateStr)
+      .reduce((s, e) => s + (e.amount || 0), 0);
+    
+    const label = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' });
+    labels.push(label);
+    data.push(amount);
+  }
+  return { labels, data };
+}
+
+function renderPaymentBreakdownChart(entries) {
+  const canvas = document.getElementById('chartPaymentBreakdown');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (paymentBreakdownChart) paymentBreakdownChart.destroy();
+
+  const { labels, cashData, upiData, cardData } = getPaymentBreakdownData(entries);
+
+  paymentBreakdownChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Cash',
+          data: cashData,
+          borderColor: '#10B981',
+          backgroundColor: 'rgba(16, 185, 129, 0.25)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#10B981',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2
+        },
+        {
+          label: 'UPI',
+          data: upiData,
+          borderColor: '#6366F1',
+          backgroundColor: 'rgba(99, 102, 241, 0.25)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#6366F1',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2
+        },
+        {
+          label: 'Card',
+          data: cardData,
+          borderColor: '#FF4B2B',
+          backgroundColor: 'rgba(255, 75, 43, 0.25)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#FF4B2B',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        intersect: false,
+        mode: 'index'
+      },
+      animation: { duration: 500 },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { family: 'Outfit', size: 11 }, padding: 12 }
+        },
+        tooltip: {
+          callbacks: {
+            label: (item) => `${item.dataset.label}: ₹${item.raw.toLocaleString('en-IN')}`
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: {
+          stacked: true,
+          ticks: {
+            callback: (v) => v >= 1000 ? `₹${(v/1000).toFixed(1)}K` : `₹${v}`,
+            font: { family: 'Outfit', size: 11 }
+          }
+        }
+      }
+    }
+  });
+}
+
+function getPaymentBreakdownData(entries) {
+  if (DASHBOARD_PERIOD === 'today') {
+    // Hourly
+    const cashData = Array(24).fill(0);
+    const upiData = Array(24).fill(0);
+    const cardData = Array(24).fill(0);
+    entries.forEach(e => {
+      if (!e.time) return;
+      const hour = parseInt(e.time.split(':')[0], 10);
+      if (hour >= 0 && hour < 24) {
+        cashData[hour] += e.cash || 0;
+        upiData[hour] += e.upi || 0;
+        cardData[hour] += e.card || 0;
+      }
+    });
+    const labels = Array.from({length: 24}, (_, i) => `${i}:00`);
+    return { labels, cashData, upiData, cardData };
+  }
+  
+  if (DASHBOARD_PERIOD === '7d' || DASHBOARD_PERIOD === '30d') {
+    // Daily
+    const days = DASHBOARD_PERIOD === '7d' ? 7 : 30;
+    const labels = [];
+    const cashData = [];
+    const upiData = [];
+    const cardData = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const dayEntries = entries.filter(e => e.date === dateStr);
+      cashData.push(dayEntries.reduce((s, e) => s + (e.cash || 0), 0));
+      upiData.push(dayEntries.reduce((s, e) => s + (e.upi || 0), 0));
+      cardData.push(dayEntries.reduce((s, e) => s + (e.card || 0), 0));
+      
+      const label = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' });
+      labels.push(label);
+    }
+    return { labels, cashData, upiData, cardData };
+  }
+  
+  // All time: monthly
+  const monthly = {};
+  entries.forEach(e => {
+    if (!e.date) return;
+    const [year, month] = e.date.split('-');
+    const key = `${year}-${month}`;
+    if (!monthly[key]) {
+      monthly[key] = { cash: 0, upi: 0, card: 0 };
+    }
+    monthly[key].cash += e.cash || 0;
+    monthly[key].upi += e.upi || 0;
+    monthly[key].card += e.card || 0;
+  });
+  const keys = Object.keys(monthly).sort();
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const labels = keys.map(k => {
+    const [y, m] = k.split('-');
+    return `${monthNames[parseInt(m,10)-1]} '${y.slice(2)}`;
+  });
+  return {
+    labels,
+    cashData: keys.map(k => monthly[k].cash),
+    upiData: keys.map(k => monthly[k].upi),
+    cardData: keys.map(k => monthly[k].card)
+  };
+}
+
+function renderPaymentDonut(entries) {
+  const ctx = document.getElementById('chartPaymentDonut');
+  if (!ctx) return;
+  
+  if (paymentDonutChart) paymentDonutChart.destroy();
+  
+  let cash = 0, upi = 0, card = 0;
+  entries.forEach(e => {
+    cash += e.cash || 0;
+    upi += e.upi || 0;
+    card += e.card || 0;
+  });
+  
+  const total = cash + upi + card;
+  const totalsEl = document.getElementById('paymentMixTotals');
+  if (totalsEl) {
+    totalsEl.innerHTML = `
+      <span>
+        <span class="mix-label">💵 Cash</span>
+        <span class="mix-value">₹${cash.toLocaleString('en-IN')}</span>
+      </span>
+      <span>
+        <span class="mix-label">📱 UPI</span>
+        <span class="mix-value">₹${upi.toLocaleString('en-IN')}</span>
+      </span>
+      <span>
+        <span class="mix-label">💳 Card</span>
+        <span class="mix-value">₹${card.toLocaleString('en-IN')}</span>
+      </span>
+    `;
+  }
+
+  if (total === 0) {
+    paymentDonutChart = new Chart(ctx.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['No Data'],
+        datasets: [{
+          data: [1],
+          backgroundColor: ['#e2e8f0'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        cutout: '70%'
+      }
+    });
+    return;
+  }
+  
+  paymentDonutChart = new Chart(ctx.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Cash', 'UPI', 'Card'],
+      datasets: [{
+        data: [cash, upi, card],
+        backgroundColor: ['#10B981', '#6366F1', '#FF4B2B'],
+        borderWidth: 0,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
+      cutout: '70%'
+    }
+  });
+}
+function renderBestSellers(entries) {
+  const dateInput = document.getElementById('bestSellersDateFilter');
+  let targetDate = istDateStr();
+  if (dateInput) {
+    if (!dateInput.value) {
+      dateInput.value = targetDate;
+    } else {
+      targetDate = dateInput.value;
+    }
+  }
+  const filteredEntries = ALL_ENTRIES_CACHE.filter(e => e.date === targetDate);
+  renderBestSellersRanked(filteredEntries, 'dailyBestSellersList');
+  renderBestSellersRanked(ALL_ENTRIES_CACHE, 'overallBestSellersList');
+}
+
+function renderBestSellersRanked(entries, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  const tally = {};
+  entries.forEach(entry => {
+    if (!entry.orderItems) return;
+    try {
+      const items = JSON.parse(entry.orderItems);
+      if (Array.isArray(items)) {
+        items.forEach(item => {
+          if (!item.qty || item.qty <= 0) return;
+          const flavourSuffix = item.flavour ? ` (${item.flavour})` : '';
+          const key = `${item.dishName}${flavourSuffix}`;
+          tally[key] = (tally[key] || 0) + item.qty;
+        });
+      }
+    } catch (e) {
+      // Ignore
+    }
+  });
+
+  const sorted = Object.entries(tally)
+    .map(([name, qty]) => ({ name, qty }))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 5);
+
+  if (sorted.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1rem; font-size:13px;">No data for this period.</p>';
+    return;
+  }
+
+  const maxQty = sorted[0].qty;
+  const medals = ['🥇', '🥈', '🥉', '4', '5'];
+
+  container.innerHTML = sorted.map((item, i) => {
+    const pct = Math.round((item.qty / maxQty) * 100);
+    const rankLabel = medals[i];
+    return `<div class="best-seller-row">
+      <span class="bs-rank">${rankLabel}</span>
+      <div class="bs-info">
+        <span class="bs-name">${item.name}</span>
+        <div class="bs-bar-wrap">
+          <div class="bs-bar" style="width:${pct}%"></div>
+        </div>
+      </div>
+      <span class="bs-count">${item.qty}</span>
+    </div>`;
+  }).join('');
+}
+
+let customerTiersChart = null;
+
+function renderCustomerBase(entries) {
+  const ctx = document.getElementById('chartCustomerTiers');
+  if (!ctx) return;
+  
+  if (customerTiersChart) customerTiersChart.destroy();
+  
+  const visitCounts = {};
+  ALL_ENTRIES_CACHE.forEach(e => {
+    if (!e.mobile || e.mobile === '0000000000') return;
+    visitCounts[e.mobile] = (visitCounts[e.mobile] || 0) + 1;
+  });
+  
+  let champions = 0; // 5+ visits
+  let regulars = 0;  // 2-4 visits
+  let oneTimers = 0; // 1 visit
+  
+  Object.values(visitCounts).forEach(count => {
+    if (count >= 5) champions++;
+    else if (count >= 2) regulars++;
+    else oneTimers++;
+  });
+  
+  const total = champions + regulars + oneTimers;
+  const pillsEl = document.getElementById('tierPills');
+  if (pillsEl) {
+    pillsEl.innerHTML = `
+      <span class="tier-pill" style="background:rgba(232, 93, 4, 0.15); color:#e85d04;">🏆 Champions: ${champions}</span>
+      <span class="tier-pill" style="background:rgba(244, 140, 6, 0.15); color:#f48c06;">🤝 Regulars: ${regulars}</span>
+      <span class="tier-pill" style="background:rgba(209, 213, 219, 0.3); color:var(--text-secondary);">🌱 One-timers: ${oneTimers}</span>
+    `;
+  }
+  
+  if (total === 0) {
+    customerTiersChart = new Chart(ctx.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['No Data'],
+        datasets: [{
+          data: [1],
+          backgroundColor: ['#e2e8f0'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        cutout: '70%'
+      }
+    });
+    return;
+  }
+  
+  customerTiersChart = new Chart(ctx.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Champions (5+)', 'Regulars (2-4)', 'One-timers (1)'],
+      datasets: [{
+        data: [champions, regulars, oneTimers],
+        backgroundColor: ['#e85d04', '#f48c06', '#d1d5db'],
+        borderWidth: 0,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      cutout: '70%'
+    }
+  });
+}
+
+function renderTopLoyalists() {
+  const ul = document.getElementById('topCustomersList');
+  if (!ul) return;
+  
+  const sortSelect = document.getElementById('loyalistSort');
+  const sortBy = sortSelect ? sortSelect.value : 'visits';
+  
+  const customerMap = {};
+  ALL_ENTRIES_CACHE.forEach(e => {
+    if (!e.mobile || e.mobile === '0000000000') return;
+    if (!customerMap[e.mobile]) {
+      customerMap[e.mobile] = { mobile: e.mobile, visits: 0, revenue: 0 };
+    }
+    customerMap[e.mobile].visits += 1;
+    customerMap[e.mobile].revenue += (e.amount || 0);
+  });
+  
+  const list = Object.values(customerMap);
+  if (sortBy === 'visits') {
+    list.sort((a, b) => b.visits - a.visits);
+  } else {
+    list.sort((a, b) => b.revenue - a.revenue);
+  }
+  
+  const top8 = list.slice(0, 8);
+  if (top8.length === 0) {
+    ul.innerHTML = '<li style="color:var(--text-muted); font-size:13px; text-align:center; padding:1rem;">No customer records yet.</li>';
+    return;
+  }
+  
+  ul.innerHTML = top8.map((c, i) => {
+    const displayMobile = c.mobile;
+    
+    const valueLabel = sortBy === 'visits' ? `${c.visits} visits` : `₹${c.revenue.toLocaleString('en-IN')}`;
+
+    return `<li style="cursor:pointer;" onclick="openLoyalistProfile('${c.mobile}')">
+      <div style="display:flex; align-items:center;">
+        <span class="top-list__rank" style="margin-right:8px; font-weight:700;">#${i + 1}</span>
+        <span>${displayMobile}</span>
+      </div>
+      <span style="font-weight:700; color:var(--brand-primary);">${valueLabel}</span>
+    </li>`;
+  }).join('');
+}
+
+async function openLoyalistProfile(mobile) {
+  try {
+    toast('Loading customer profile…', 'info');
+    const cust = await api({ action: 'getCustomer', mobile });
+    CURRENT_CUSTOMER = cust;
+    openDetailsModal();
+  } catch (e) {
+    toast('Error opening profile: ' + e.message, 'error');
+  }
+}
+
+function renderRecentActivity() {
+  const container = document.getElementById('recentActivityFeed');
+  if (!container) return;
+  
+  const recent = [...ALL_ENTRIES_CACHE]
+    .sort((a, b) => {
+      const dateA = a.date + 'T' + (a.time || '00:00:00');
+      const dateB = b.date + 'T' + (b.time || '00:00:00');
+      return dateB.localeCompare(dateA);
+    })
+    .slice(0, 10);
+
+  if (!recent.length) {
+    container.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:2rem; font-size:13px;">No transactions recorded yet.</p>';
+    return;
+  }
+
+  container.innerHTML = recent.map((e, i) => {
+    const absoluteIndex = ALL_ENTRIES_CACHE.indexOf(e);
+    
+    const displayMobile = e.mobile && e.mobile !== '0000000000'
+      ? e.mobile
+      : 'Walk-in';
+      
+    const modeIcon = { cash: '💵', upi: '📱', card: '💳', split: '✂️' }[e.paymentMode] || '💵';
+    
+    let itemsStr = '—';
+    if (e.orderItems) {
+      try {
+        const items = JSON.parse(e.orderItems);
+        if (Array.isArray(items) && items.length > 0) {
+          itemsStr = items.map(it => `${it.dishName}×${it.qty || 1}`).join(', ');
+        }
+      } catch (err) {}
+    }
+    
+    const dateLabel = e.date ? e.date.substring(5) : '';
+    const timeLabel = e.time ? e.time.substring(0, 5) : '';
+    const timeDisplay = `${dateLabel} ${timeLabel}`;
+    
+    return `<div class="activity-row" onclick="showEntryDetails(${absoluteIndex})" style="cursor:pointer;">
+      <div class="activity-time">${timeDisplay}</div>
+      <div class="activity-customer">${displayMobile}</div>
+      <div class="activity-amount">₹${(e.amount || 0).toLocaleString('en-IN')}</div>
+      <div class="activity-mode">${modeIcon}</div>
+      <div class="activity-items" title="${itemsStr}">${itemsStr}</div>
+    </div>`;
+  }).join('');
+}
+
+function prependActivityRow(e) {
+  const feed = document.getElementById('recentActivityFeed');
+  if (!feed) return;
+  
+  if (feed.querySelector('p')) {
+    feed.innerHTML = '';
+  }
+  
+  const displayMobile = e.mobile && e.mobile !== '0000000000'
+    ? e.mobile
+    : 'Walk-in';
+    
+  const modeIcon = { cash: '💵', upi: '📱', card: '💳', split: 'split' }[e.cash ? (e.upi ? 'split' : (e.card ? 'split' : 'cash')) : (e.upi ? (e.card ? 'split' : 'upi') : 'card')] || '💵';
+  
+  let itemsStr = '—';
+  if (e.orderItems) {
+    try {
+      const items = JSON.parse(e.orderItems);
+      if (Array.isArray(items) && items.length > 0) {
+        itemsStr = items.map(it => `${it.dishName}×${it.qty || 1}`).join(', ');
+      }
+    } catch (err) {}
+  }
+  
+  const dateLabel = e.date ? e.date.substring(5) : '';
+  const timeLabel = e.time ? e.time.substring(0, 5) : '';
+  
+  const absoluteIndex = ALL_ENTRIES_CACHE.indexOf(e);
+  
+  const row = document.createElement('div');
+  row.className = 'activity-row activity-row--new';
+  row.onclick = () => showEntryDetails(absoluteIndex);
+  row.style.cursor = 'pointer';
+  row.innerHTML = `
+    <div class="activity-time">${dateLabel} ${timeLabel}</div>
+    <div class="activity-customer">${displayMobile}</div>
+    <div class="activity-amount">₹${(e.amount || 0).toLocaleString('en-IN')}</div>
+    <div class="activity-mode">${modeIcon}</div>
+    <div class="activity-items" title="${itemsStr}">${itemsStr}</div>
+  `;
+  
+  feed.prepend(row);
+  
+  const rows = feed.querySelectorAll('.activity-row');
+  if (rows.length > 10) {
+    rows[rows.length - 1].remove();
+  }
+  
+  requestAnimationFrame(() => {
+    row.classList.add('activity-row--visible');
+  });
+}
+
+function renderTodaySummaryCard() {
+  const valEl = document.getElementById('todayValue');
+  const deltaEl = document.getElementById('todayDelta');
+  if (!valEl) return;
+  
+  const today = istDateStr();
+  const yesterday = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  })();
+  
+  const todayEntries = ALL_ENTRIES_CACHE.filter(e => e.date === today);
+  const yesterdayEntries = ALL_ENTRIES_CACHE.filter(e => e.date === yesterday);
+  
+  const todayRevenue = todayEntries.reduce((s, e) => s + (e.amount || 0), 0);
+  const yesterdayRevenue = yesterdayEntries.reduce((s, e) => s + (e.amount || 0), 0);
+  
+  const todayCount = todayEntries.length;
+  const yesterdayCount = yesterdayEntries.length;
+  
+  if (todayView === 'entries') {
+    valEl.textContent = todayCount + (todayCount === 1 ? ' entry' : ' entries');
+    const diff = todayCount - yesterdayCount;
+    if (diff > 0) {
+      deltaEl.textContent = `↑ +${diff} vs yesterday`;
+      deltaEl.className = 'today-delta positive';
+    } else if (diff < 0) {
+      deltaEl.textContent = `↓ ${diff} vs yesterday`;
+      deltaEl.className = 'today-delta negative';
+    } else {
+      deltaEl.textContent = `→ 0 vs yesterday`;
+      deltaEl.className = 'today-delta';
+    }
+  } else {
+    valEl.textContent = '₹' + todayRevenue.toLocaleString('en-IN');
+    const diff = todayRevenue - yesterdayRevenue;
+    const sign = diff >= 0 ? '+' : '';
+    if (diff > 0) {
+      deltaEl.textContent = `↑ ${sign}₹${diff.toLocaleString('en-IN')} vs yesterday`;
+      deltaEl.className = 'today-delta positive';
+    } else if (diff < 0) {
+      deltaEl.textContent = `↓ ₹${Math.abs(diff).toLocaleString('en-IN')} vs yesterday`;
+      deltaEl.className = 'today-delta negative';
+    } else {
+      deltaEl.textContent = `→ ₹0 vs yesterday`;
+      deltaEl.className = 'today-delta';
+    }
   }
 }
 
@@ -1491,50 +2653,7 @@ function setTodayView(view, btn) {
   todayView = view;
   document.querySelectorAll('#todayToggle .toggle-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  if (ADMIN_DATA) renderTodayValue(ADMIN_DATA);
-}
-
-let repeatNewChart = null;
-function renderRepeatNewChart(data) {
-  const ctx = document.getElementById('chartRepeatNew').getContext('2d');
-  if (repeatNewChart) repeatNewChart.destroy();
-
-  repeatNewChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Repeat', 'New'],
-      datasets: [{
-        data: [data.repeatCount, data.newCount],
-        backgroundColor: ['#e85d04', '#faa307'],
-        borderWidth: 0,
-        borderRadius: 4,
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: 'bottom', labels: { font: { family: 'Inter' } } }
-      },
-      cutout: '65%'
-    }
-  });
-}
-
-function renderTopCustomers(list) {
-  const ul = document.getElementById('topCustomersList');
-  if (!list || list.length === 0) {
-    ul.innerHTML = '<li style="color:var(--text-muted);">No data yet.</li>';
-    return;
-  }
-  ul.innerHTML = list.map((c, i) =>
-    '<li>' +
-    '<div style="display:flex;align-items:center;">' +
-    '<span class="top-list__rank">' + (i + 1) + '</span>' +
-    '<span>' + c.mobile + '</span>' +
-    '</div>' +
-    '<span style="font-weight:700;color:var(--brand-primary);">' + c.entries + ' visits</span>' +
-    '</li>'
-  ).join('');
+  renderTodaySummaryCard();
 }
 
 // ──── Heatmap ────
@@ -1571,7 +2690,19 @@ function renderHeatmap(matrix) {
   const container = document.getElementById('heatmapContainer');
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   let maxVal = 0;
-  matrix.forEach(row => row.forEach(v => { if (v > maxVal) maxVal = v; }));
+  let peakDayIdx = 0;
+  let peakHourIdx = 0;
+  
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      const v = matrix[d][h];
+      if (v > maxVal) {
+        maxVal = v;
+        peakDayIdx = d;
+        peakHourIdx = h;
+      }
+    }
+  }
 
   let html = '<div class="heatmap-grid">';
   // Header row
@@ -1588,13 +2719,33 @@ function renderHeatmap(matrix) {
       const bg = intensity === 0
         ? 'var(--dot-empty)'
         : 'rgba(232, 93, 4, ' + (0.15 + intensity * 0.85) + ')';
-      html += '<div class="heatmap-cell" style="background:' + bg + '">' +
+
+      let cellClasses = ['heatmap-cell'];
+      if (h < 3) cellClasses.push('edge-left');
+      if (h > 20) cellClasses.push('edge-right');
+      if (d < 2) cellClasses.push('edge-top');
+      const classAttr = cellClasses.join(' ');
+
+      html += '<div class="' + classAttr + '" style="background:' + bg + '">' +
         '<div class="heatmap-tooltip">' + days[d] + ' ' + h + ':00 — ' + val + '</div>' +
         '</div>';
     }
   }
   html += '</div>';
   container.innerHTML = html;
+
+  // Peak callout
+  const peakCallout = document.getElementById('peakHoursCallout');
+  if (peakCallout) {
+    if (maxVal > 0) {
+      const ampm = peakHourIdx >= 12 ? 'PM' : 'AM';
+      const displayHour = peakHourIdx % 12 || 12;
+      peakCallout.textContent = `🔥 Busiest: ${days[peakDayIdx]} at ${displayHour}${ampm}`;
+      peakCallout.style.display = 'block';
+    } else {
+      peakCallout.style.display = 'none';
+    }
+  }
 }
 
 // ──── Time Between Visits ────
@@ -1636,15 +2787,11 @@ function calculateTimeBetweenVisits() {
 
   const statsGrid = document.getElementById('tbvStats');
   if (statsGrid) {
-    statsGrid.innerHTML = [
-      { label: 'Avg Gap', value: data.avg + ' days' },
-      { label: 'Min Gap', value: data.min + ' days' },
-      { label: 'Max Gap', value: data.max + ' days' },
-      { label: 'Total Pairs', value: data.totalGaps || 0 },
-    ].map(s =>
-      '<div class="stat-card"><div class="stat-card__value">' + s.value +
-      '</div><div class="stat-card__label">' + s.label + '</div></div>'
-    ).join('');
+    statsGrid.innerHTML = `
+      <div style="font-size: 13px; font-weight: 500; color: var(--text-secondary); text-align: center; padding: 4px 0;">
+        Avg Gap: <strong>${data.avg} days</strong> | Min Gap: <strong>${data.min} days</strong> | Max Gap: <strong>${data.max} days</strong> | Total Pairs: <strong>${data.totalGaps || 0}</strong>
+      </div>
+    `;
   }
 
     // Distribution chart
@@ -1652,7 +2799,9 @@ function calculateTimeBetweenVisits() {
     const labels = Object.keys(dist).sort((a, b) => Number(a) - Number(b));
     const values = labels.map(k => dist[k]);
 
-    const ctx = document.getElementById('chartTBV').getContext('2d');
+    const canvas = document.getElementById('chartTBV');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     if (tbvChart) tbvChart.destroy();
     tbvChart = new Chart(ctx, {
       type: 'bar',
@@ -1667,6 +2816,7 @@ function calculateTimeBetweenVisits() {
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
           y: { beginAtZero: true, ticks: { font: { family: 'Inter' } } },
@@ -2451,100 +3601,20 @@ async function deleteAdminFlavour(rowIndex) {
 }
 
 async function loadBestSellers() {
-  const dateInput = document.getElementById('bestSellersDateFilter');
-  if (!dateInput) return;
-  
-  if (!dateInput.value) {
-    dateInput.value = istDateStr();
-  }
-  
-  const targetDate = dateInput.value;
-  
-  const dailyBody = document.getElementById('dailyBestSellersBody');
-  const overallBody = document.getElementById('overallBestSellersBody');
-  
-  if (dailyBody) dailyBody.innerHTML = '<tr><td colspan="4" style="text-align:center;"><span class="spinner" style="border-top-color:var(--brand-primary)"></span> Loading...</td></tr>';
-  if (overallBody) overallBody.innerHTML = '<tr><td colspan="4" style="text-align:center;"><span class="spinner" style="border-top-color:var(--brand-primary)"></span> Loading...</td></tr>';
-  
-  try {
-    const dailyMap = {};
-    const overallMap = {};
-
-    ALL_ENTRIES_CACHE.forEach(entry => {
-      if (!entry.orderItems) return;
-      try {
-        const items = JSON.parse(entry.orderItems);
-        items.forEach(item => {
-          if (!item.qty || item.qty <= 0) return;
-          const key = item.categoryName + '|||' + item.dishName + '|||' + (item.flavourName || '');
-          
-          if (!overallMap[key]) {
-            overallMap[key] = { category: item.categoryName, dishName: item.dishName, flavour: item.flavourName, qty: 0 };
-          }
-          overallMap[key].qty += item.qty;
-
-          if (entry.date === targetDate) {
-            if (!dailyMap[key]) {
-              dailyMap[key] = { category: item.categoryName, dishName: item.dishName, flavour: item.flavourName, qty: 0 };
-            }
-            dailyMap[key].qty += item.qty;
-          }
-        });
-      } catch (e) {
-        // Skip malformed orderItems
-      }
-    });
-
-    const dailyArr = Object.values(dailyMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
-    const overallArr = Object.values(overallMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
-    const data = { daily: dailyArr, overall: overallArr };
-    if (dailyBody) {
-      dailyBody.innerHTML = '';
-      if (data.daily && data.daily.length > 0) {
-        data.daily.forEach(item => {
-          dailyBody.innerHTML += `
-            <tr>
-              <td>${item.category}</td>
-              <td style="font-weight: 600;">${item.dishName}</td>
-              <td>${item.flavour || '—'}</td>
-              <td style="text-align: center; font-weight: 700; color: var(--brand-primary);">${item.qty}</td>
-            </tr>
-          `;
-        });
-      } else {
-        dailyBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">No sales recorded for this day.</td></tr>';
-      }
-    }
-    
-    if (overallBody) {
-      overallBody.innerHTML = '';
-      if (data.overall && data.overall.length > 0) {
-        data.overall.forEach(item => {
-          overallBody.innerHTML += `
-            <tr>
-              <td>${item.category}</td>
-              <td style="font-weight: 600;">${item.dishName}</td>
-              <td>${item.flavour || '—'}</td>
-              <td style="text-align: center; font-weight: 700; color: var(--brand-primary);">${item.qty}</td>
-            </tr>
-          `;
-        });
-      } else {
-        overallBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">No sales recorded.</td></tr>';
-      }
-    }
-  } catch (e) {
-    console.error('Failed to load best selling dishes', e);
-    if (dailyBody) dailyBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--danger);">Error loading data.</td></tr>';
-    if (overallBody) overallBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--danger);">Error loading data.</td></tr>';
-  }
+  renderBestSellers();
 }
 async function loadDashboardData() {
-  const container = document.getElementById('statsGrid');
-  if (container) {
+  const container = document.getElementById('kpiStrip');
+  if (container && (!ALL_ENTRIES_CACHE || ALL_ENTRIES_CACHE.length === 0)) {
     container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 2rem;"><span class="spinner" style="border-top-color:var(--brand-primary)"></span> Loading dashboard analytics...</div>';
   }
   try {
+    // If cache is empty, download cache first
+    if (!ALL_ENTRIES_CACHE || ALL_ENTRIES_CACHE.length === 0) {
+      await downloadSheetCache(true);
+      ALL_ENTRIES_CACHE = getCacheItem('getAllEntries') || [];
+    }
+    
     ADMIN_DATA = await api({ action: 'getAdminData' });
     
     // Override Today's totals dynamically to keep Dashboard completely real-time
@@ -2557,23 +3627,22 @@ async function loadDashboardData() {
         todayAmount += (e.amount || 0);
       }
     });
-    ADMIN_DATA.todayCount = todayCount;
-    ADMIN_DATA.todayAmount = todayAmount;
     
-    // Also override total Amount overall
-    let totalAmt = 0;
-    ALL_ENTRIES_CACHE.forEach(e => totalAmt += (e.amount || 0));
-    const totalLength = ALL_ENTRIES_CACHE.length;
-    ADMIN_DATA.avgBilling = totalLength > 0 ? Math.round(totalAmt / totalLength) : 0;
-    
-    // Update overall totals
-    ADMIN_DATA.totalVisits = Math.max(ADMIN_DATA.totalVisits, totalLength);
+    if (ADMIN_DATA) {
+      ADMIN_DATA.todayCount = todayCount;
+      ADMIN_DATA.todayAmount = todayAmount;
+      
+      // Also override total Amount overall
+      let totalAmt = 0;
+      ALL_ENTRIES_CACHE.forEach(e => totalAmt += (e.amount || 0));
+      const totalLength = ALL_ENTRIES_CACHE.length;
+      ADMIN_DATA.avgBilling = totalLength > 0 ? Math.round(totalAmt / totalLength) : 0;
+      
+      // Update overall totals
+      ADMIN_DATA.totalVisits = Math.max(ADMIN_DATA.totalVisits, totalLength);
+    }
 
-    renderAdminDashboard(ADMIN_DATA);
-    loadBestSellers();
-    calculateMdHeatmap();
-    calculateHeatmap();
-    calculateTimeBetweenVisits();
+    renderAllDashboardComponents();
   } catch (e) {
     console.error('Failed to load dashboard data', e);
     if (container) {
