@@ -538,7 +538,7 @@ async function handleAddEntry() {
   btn.disabled = false;
   btn.innerHTML = '➕ Add Entry';
 
-  if (mobile === '0000000000') {
+  if (!mobile) {
     checkAmountAndToggleButtons();
     return;
   }
@@ -571,10 +571,16 @@ async function handleAddEntry() {
 function handleWithoutMobileEntry() {
   const mobileInput = document.getElementById('inputMobile');
   if (mobileInput) {
-    mobileInput.value = '0000000000';
-    localStorage.setItem('ppp_loyalty_mobile', '0000000000');
+    mobileInput.value = '';
+    localStorage.setItem('ppp_loyalty_mobile', '');
   }
-  handleAddEntry();
+  
+  CURRENT_CUSTOMER = {
+    found: false, mobile: '',
+    totalEntries: 0, rewardsClaimed: 0,
+    eligible: false, lastVisitDate: ''
+  };
+  openEntryForm('', CURRENT_CUSTOMER);
 }
 
 function checkAmountAndToggleButtons() {
@@ -587,10 +593,10 @@ function checkAmountAndToggleButtons() {
   const btnReceipt = document.getElementById('btnReceiptOnly');
   const btnClaim = document.getElementById('btnClaimForce');
 
-  // If mobile is the default "no mobile" number, always show only the Receipt button
+  // If mobile is blank or the default "no mobile" number, always show only the Receipt button
   const dispMobile = document.getElementById('dispMobile');
   const mobile = dispMobile ? dispMobile.value.trim() : '';
-  if (mobile === '0000000000') {
+  if (!mobile) {
     btnSave.style.display = 'none';
     btnReceipt.style.display = '';
     btnClaim.style.display = 'none';
@@ -838,7 +844,7 @@ async function handleSaveEntry() {
   const orderItems = localStorage.getItem('ppp_pendingOrderItems') || '';
   const payAmts = getPaymentAmounts(amount);
 
-  if (mobile === '0000000000') {
+  if (!mobile) {
     // Skip optimistic loyalty UI logic, just toast success
     toast('✅ Bill generated successfully!', 'success');
     
@@ -1014,7 +1020,7 @@ async function handleReceiptOnly() {
   const payAmts = getPaymentAmounts(amount);
   const orderItems = localStorage.getItem('ppp_pendingOrderItems') || '';
 
-  if (mobile === '0000000000') {
+  if (!mobile) {
     toast('✅ Bill generated successfully!', 'success');
     
     localStorage.removeItem('ppp_loyalty_form_open');
@@ -1158,82 +1164,7 @@ async function loadAllEntries() {
   try {
     const entries = await api({ action: 'getAllEntries' });
     ALL_ENTRIES_CACHE = entries || [];
-    tbody.innerHTML = '';
-    if (mobileList) mobileList.innerHTML = '';
-
-    if (ALL_ENTRIES_CACHE && ALL_ENTRIES_CACHE.length > 0) {
-      ALL_ENTRIES_CACHE.forEach((e, idx) => {
-        // Format payment modes string (e.g. Cash: ₹100, UPI: ₹200, Card: ₹0)
-        const modes = [];
-        if (e.cash > 0) modes.push(`Cash: ₹${e.cash}`);
-        if (e.upi > 0) modes.push(`UPI: ₹${e.upi}`);
-        if (e.card > 0) modes.push(`Card: ₹${e.card}`);
-        
-        // If all are 0 or empty (e.g. legacy data), default to the whole amount as cash
-        let modesStr = modes.join(', ');
-        if (!modesStr) {
-          modesStr = `Cash: ₹${e.amount}`;
-        }
-
-        const visitNum = (e.numEntries === null || e.numEntries === undefined || isNaN(e.numEntries)) ? '—' : e.numEntries;
-
-        let itemsHtml = '<span style="color:var(--text-muted); font-size: 0.85rem;">—</span>';
-        if (e.orderItems) {
-          try {
-            const items = JSON.parse(e.orderItems);
-            if (Array.isArray(items) && items.length > 0) {
-              itemsHtml = '<div class="ordered-items-list">';
-              items.forEach(item => {
-                const flavourSuffix = item.flavour ? ` (${item.flavour})` : '';
-                itemsHtml += `
-                  <span class="ordered-item-badge">
-                    <span class="item-badge-category">${item.categoryName}</span>
-                    <span class="item-badge-name">${item.dishName}${flavourSuffix}</span>
-                    <span class="item-badge-qty">×${item.qty}</span>
-                  </span>
-                `;
-              });
-              itemsHtml += '</div>';
-            }
-          } catch(err) {
-            // Ignore parse errors or old string entries
-          }
-        }
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${e.mobile}</td>
-          <td>${e.date}</td>
-          <td>${e.time}</td>
-          <td style="font-weight: 700;">₹${e.amount}</td>
-          <td>${modesStr}</td>
-          <td>${itemsHtml}</td>
-          <td style="text-align: center;">${visitNum}</td>
-        `;
-        tbody.appendChild(tr);
-
-        // Mobile list rendering
-        if (mobileList) {
-          const card = document.createElement('div');
-          card.className = 'mobile-entry-card fade-in';
-          card.innerHTML = `
-            <div class="mobile-entry-card__header">
-              <div class="mobile-entry-card__phone">📱 +91 ${e.mobile}</div>
-              <div class="mobile-entry-card__amount">₹${e.amount}</div>
-            </div>
-            <div class="mobile-entry-card__actions">
-              <button class="btn btn--outline btn--sm btn--block" onclick="showEntryDetails(${idx})">All Details</button>
-            </div>
-          `;
-          mobileList.appendChild(card);
-        }
-      });
-    } else {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">No entries found.</td></tr>';
-      if (mobileList) {
-        mobileList.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;">No entries found.</div>';
-      }
-    }
+    resetEntriesFilters(); // Reset controls and trigger rendering
   } catch (e) {
     console.error('Failed to load all entries', e);
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--danger);">Error loading entries. Please try again.</td></tr>';
@@ -1241,6 +1172,170 @@ async function loadAllEntries() {
       mobileList.innerHTML = '<div style="text-align:center;color:var(--danger);padding:2rem;">Error loading entries. Please try again.</div>';
     }
   }
+}
+
+function renderAllEntriesTable(entries) {
+  const tbody = document.getElementById('allEntriesTableBody');
+  const mobileList = document.getElementById('allEntriesMobileList');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  if (mobileList) mobileList.innerHTML = '';
+
+  // Calculate and display mini stats for the current view
+  updateEntriesStats(entries);
+
+  if (entries && entries.length > 0) {
+    entries.forEach((e, idx) => {
+      // Format payment modes string (with custom green/indigo/orange pills)
+      const modes = [];
+      if (e.cash > 0) modes.push(`<span class="pm-pill pm-cash">Cash: ₹${e.cash}</span>`);
+      if (e.upi > 0) modes.push(`<span class="pm-pill pm-upi">UPI: ₹${e.upi}</span>`);
+      if (e.card > 0) modes.push(`<span class="pm-pill pm-card">Card: ₹${e.card}</span>`);
+      
+      let modesHtml = modes.join('');
+      if (!modesHtml) {
+        modesHtml = `<span class="pm-pill pm-cash">Cash: ₹${e.amount}</span>`;
+      }
+
+      const visitNum = (e.numEntries === null || e.numEntries === undefined || isNaN(e.numEntries)) ? '—' : e.numEntries;
+
+      let itemsHtml = '<span style="color:var(--text-muted); font-size: 0.85rem;">—</span>';
+      if (e.orderItems) {
+        try {
+          const items = JSON.parse(e.orderItems);
+          if (Array.isArray(items) && items.length > 0) {
+            itemsHtml = '<div class="ordered-items-list">';
+            items.forEach(item => {
+              const flavourSuffix = item.flavour ? ` (${item.flavour})` : '';
+              itemsHtml += `
+                <span class="ordered-item-badge">
+                  <span class="item-badge-category">${item.categoryName}</span>
+                  <span class="item-badge-name">${item.dishName}${flavourSuffix}</span>
+                  <span class="item-badge-qty">×${item.qty}</span>
+                </span>
+              `;
+            });
+            itemsHtml += '</div>';
+          }
+        } catch(err) {
+          // Ignore parse errors or old string entries
+        }
+      }
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="font-weight: 700; color: var(--text-primary);">📱 +91 ${e.mobile}</td>
+        <td>${e.date}</td>
+        <td>${e.time}</td>
+        <td style="font-weight: 800; color: var(--brand-primary); font-size: 0.95rem;">₹${e.amount}</td>
+        <td><div style="display: flex; flex-wrap: wrap; gap: 4px;">${modesHtml}</div></td>
+        <td>${itemsHtml}</td>
+        <td style="text-align: center; font-weight: 600; color: var(--text-secondary);">Visit #${visitNum}</td>
+      `;
+      tbody.appendChild(tr);
+
+      // Mobile list rendering showing mobile number, amount, and details 'i' button in one horizontal line
+      if (mobileList) {
+        const card = document.createElement('div');
+        card.className = 'mobile-entry-card fade-in';
+        card.innerHTML = `
+          <div class="mobile-entry-card__phone" style="font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">📱 +91 ${e.mobile}</div>
+          <div class="mobile-entry-card__amount" style="flex: 1; text-align: right; margin-right: 0.25rem; font-size: 1.1rem; font-weight: 800; color: var(--brand-primary);">₹${e.amount}</div>
+          <button class="btn btn--outline" onclick="showEntryDetails(${idx})" style="width: 32px; height: 32px; border-radius: 50%; padding: 0; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.95rem; border-color: var(--brand-primary); color: var(--brand-primary); transition: all 0.2s; background: transparent;" title="View Details">i</button>
+        `;
+        mobileList.appendChild(card);
+      }
+    });
+  } else {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">No entries found matching filters.</td></tr>';
+    if (mobileList) {
+      mobileList.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;">No entries found matching filters.</div>';
+    }
+  }
+}
+
+function updateEntriesStats(entries) {
+  const totalSalesEl = document.getElementById('entriesTotalSales');
+  const totalCountEl = document.getElementById('entriesTotalCount');
+  const avgValueEl = document.getElementById('entriesAvgValue');
+  const paymentBreakdownEl = document.getElementById('entriesPaymentBreakdown');
+
+  if (!entries || entries.length === 0) {
+    if (totalSalesEl) totalSalesEl.textContent = '₹0';
+    if (totalCountEl) totalCountEl.textContent = '0';
+    if (avgValueEl) avgValueEl.textContent = '₹0';
+    if (paymentBreakdownEl) paymentBreakdownEl.textContent = '₹0 / ₹0 / ₹0';
+    return;
+  }
+
+  const count = entries.length;
+  let totalSales = 0;
+  let cashTotal = 0;
+  let upiTotal = 0;
+  let cardTotal = 0;
+
+  entries.forEach(e => {
+    totalSales += e.amount || 0;
+    cashTotal += e.cash > 0 ? e.cash : (e.upi === 0 && e.card === 0 ? e.amount : 0);
+    upiTotal += e.upi || 0;
+    cardTotal += e.card || 0;
+  });
+
+  const avg = Math.round(totalSales / count);
+
+  if (totalSalesEl) totalSalesEl.textContent = `₹${totalSales.toLocaleString('en-IN')}`;
+  if (totalCountEl) totalCountEl.textContent = count.toLocaleString('en-IN');
+  if (avgValueEl) avgValueEl.textContent = `₹${avg.toLocaleString('en-IN')}`;
+  if (paymentBreakdownEl) {
+    paymentBreakdownEl.innerHTML = `
+      <span style="color: #10b981;">₹${(cashTotal/1000).toFixed(1)}k</span> / 
+      <span style="color: #6366f1;">₹${(upiTotal/1000).toFixed(1)}k</span> / 
+      <span style="color: #ff4b2b;">₹${(cardTotal/1000).toFixed(1)}k</span>
+    `;
+  }
+}
+
+function filterEntries() {
+  const searchVal = document.getElementById('entriesSearchInput').value.trim();
+  const dateVal = document.getElementById('entriesDateFilter').value;
+  const paymentVal = document.getElementById('entriesPaymentFilter').value;
+
+  let filtered = ALL_ENTRIES_CACHE || [];
+
+  // 1. Search by mobile number
+  if (searchVal) {
+    filtered = filtered.filter(e => e.mobile && e.mobile.includes(searchVal));
+  }
+
+  // 2. Filter by date
+  if (dateVal) {
+    filtered = filtered.filter(e => e.date === dateVal);
+  }
+
+  // 3. Filter by payment mode
+  if (paymentVal && paymentVal !== 'all') {
+    filtered = filtered.filter(e => {
+      if (paymentVal === 'cash') return e.cash > 0;
+      if (paymentVal === 'upi') return e.upi > 0;
+      if (paymentVal === 'card') return e.card > 0;
+      return true;
+    });
+  }
+
+  renderAllEntriesTable(filtered);
+}
+
+function resetEntriesFilters() {
+  const searchInput = document.getElementById('entriesSearchInput');
+  const dateFilter = document.getElementById('entriesDateFilter');
+  const paymentFilter = document.getElementById('entriesPaymentFilter');
+
+  if (searchInput) searchInput.value = '';
+  if (dateFilter) dateFilter.value = '';
+  if (paymentFilter) paymentFilter.value = 'all';
+
+  renderAllEntriesTable(ALL_ENTRIES_CACHE || []);
 }
 
 function showEntryDetails(index) {
@@ -1400,6 +1495,13 @@ function openDetailsModal() {
     toast('No customer data available.', 'error');
     return;
   }
+  
+  const displayMobile = CURRENT_CUSTOMER.mobile && CURRENT_CUSTOMER.mobile.trim() !== ''
+    ? '+91 ' + CURRENT_CUSTOMER.mobile
+    : 'Walk-in / No Mobile';
+  const profileEl = document.getElementById('profileMobileDisp');
+  if (profileEl) profileEl.textContent = displayMobile;
+
   renderDots();
   renderRewardEmojis();
   renderEligibility();
@@ -2311,10 +2413,7 @@ function renderBestSellers(entries) {
   renderBestSellersRanked(ALL_ENTRIES_CACHE, 'overallBestSellersList');
 }
 
-function renderBestSellersRanked(entries, containerId) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  
+function getBestSellersData(entries) {
   const tally = {};
   entries.forEach(entry => {
     if (!entry.orderItems) return;
@@ -2333,20 +2432,27 @@ function renderBestSellersRanked(entries, containerId) {
     }
   });
 
-  const sorted = Object.entries(tally)
+  return Object.entries(tally)
     .map(([name, qty]) => ({ name, qty }))
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 5);
+    .sort((a, b) => b.qty - a.qty);
+}
 
-  if (sorted.length === 0) {
+function renderBestSellersRanked(entries, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  const sorted = getBestSellersData(entries);
+  const top5 = sorted.slice(0, 5);
+
+  if (top5.length === 0) {
     container.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1rem; font-size:13px;">No data for this period.</p>';
     return;
   }
 
-  const maxQty = sorted[0].qty;
+  const maxQty = top5[0].qty;
   const medals = ['🥇', '🥈', '🥉', '4', '5'];
 
-  container.innerHTML = sorted.map((item, i) => {
+  let html = top5.map((item, i) => {
     const pct = Math.round((item.qty / maxQty) * 100);
     const rankLabel = medals[i];
     return `<div class="best-seller-row">
@@ -2360,6 +2466,72 @@ function renderBestSellersRanked(entries, containerId) {
       <span class="bs-count">${item.qty}</span>
     </div>`;
   }).join('');
+
+  if (sorted.length > 5) {
+    const listType = containerId === 'dailyBestSellersList' ? 'today' : 'all-time';
+    html += `
+      <div style="margin-top: auto; padding-top: 12px; text-align: center;">
+        <button class="btn btn--outline btn--sm" style="width: 100%;" onclick="showAllBestSellers('${listType}')">View All</button>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
+
+function showAllBestSellers(listType) {
+  let entries = [];
+  let title = '';
+  
+  if (listType === 'today') {
+    const dateInput = document.getElementById('bestSellersDateFilter');
+    let targetDate = istDateStr();
+    if (dateInput && dateInput.value) {
+      targetDate = dateInput.value;
+    }
+    entries = ALL_ENTRIES_CACHE.filter(e => e.date === targetDate);
+    let dateObj = new Date(targetDate);
+    let formattedDate = targetDate;
+    if (!isNaN(dateObj)) {
+      formattedDate = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+    title = `Today's Best Sellers (${formattedDate})`;
+  } else {
+    entries = ALL_ENTRIES_CACHE;
+    title = 'All-Time Best Sellers';
+  }
+  
+  const sorted = getBestSellersData(entries);
+  const container = document.getElementById('bestSellersAllList');
+  const titleContainer = document.getElementById('bestSellersAllTitle');
+  
+  if (titleContainer) {
+    titleContainer.innerHTML = `<span class="icon">${listType === 'today' ? '📈' : '🏆'}</span> ${title}`;
+  }
+  
+  if (!container) return;
+  
+  if (sorted.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1.5rem;">No data available.</p>';
+  } else {
+    const maxQty = sorted[0].qty;
+    container.innerHTML = sorted.map((item, i) => {
+      const pct = Math.round((item.qty / maxQty) * 100);
+      const rankLabel = i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1);
+      return `<div class="best-seller-row">
+        <span class="bs-rank">${rankLabel}</span>
+        <div class="bs-info">
+          <span class="bs-name">${item.name}</span>
+          <div class="bs-bar-wrap">
+            <div class="bs-bar" style="width:${pct}%"></div>
+          </div>
+        </div>
+        <span class="bs-count">${item.qty}</span>
+      </div>`;
+    }).join('');
+  }
+  
+  openModal('modalBestSellersAll');
 }
 
 let customerTiersChart = null;
@@ -2372,7 +2544,7 @@ function renderCustomerBase(entries) {
   
   const visitCounts = {};
   ALL_ENTRIES_CACHE.forEach(e => {
-    if (!e.mobile || e.mobile === '0000000000') return;
+    if (!e.mobile || e.mobile.trim() === '') return;
     visitCounts[e.mobile] = (visitCounts[e.mobile] || 0) + 1;
   });
   
@@ -2448,7 +2620,7 @@ function renderTopLoyalists() {
   
   const customerMap = {};
   ALL_ENTRIES_CACHE.forEach(e => {
-    if (!e.mobile || e.mobile === '0000000000') return;
+    if (!e.mobile || e.mobile.trim() === '') return;
     if (!customerMap[e.mobile]) {
       customerMap[e.mobile] = { mobile: e.mobile, visits: 0, revenue: 0 };
     }
@@ -2515,7 +2687,7 @@ function renderRecentActivity() {
   container.innerHTML = recent.map((e, i) => {
     const absoluteIndex = ALL_ENTRIES_CACHE.indexOf(e);
     
-    const displayMobile = e.mobile && e.mobile !== '0000000000'
+    const displayMobile = e.mobile && e.mobile.trim() !== ''
       ? e.mobile
       : 'Walk-in';
       
@@ -2553,7 +2725,7 @@ function prependActivityRow(e) {
     feed.innerHTML = '';
   }
   
-  const displayMobile = e.mobile && e.mobile !== '0000000000'
+  const displayMobile = e.mobile && e.mobile.trim() !== ''
     ? e.mobile
     : 'Walk-in';
     
@@ -2757,7 +2929,7 @@ function calculateTimeBetweenVisits() {
   ALL_ENTRIES_CACHE.forEach(r => {
     if (!r.mobile || !r.date) return;
     const m = r.mobile;
-    if (m === '0000000000') return;
+    if (!m || m.trim() === '') return;
     if (!byMobile[m]) byMobile[m] = [];
     byMobile[m].push(new Date(r.date));
   });
@@ -2778,8 +2950,25 @@ function calculateTimeBetweenVisits() {
     const min = Math.min(...gaps);
     const max = Math.max(...gaps);
 
-    const dist = {};
-    gaps.forEach(g => { const bucket = Math.min(g, 30); dist[bucket] = (dist[bucket] || 0) + 1; });
+    const dist = {
+      'Same Day': 0,
+      '1-2 Days': 0,
+      '3-5 Days': 0,
+      '6-10 Days': 0,
+      '11-20 Days': 0,
+      '21-30 Days': 0,
+      '30+ Days': 0
+    };
+    gaps.forEach(g => {
+      if (g === 0) dist['Same Day']++;
+      else if (g <= 2) dist['1-2 Days']++;
+      else if (g <= 5) dist['3-5 Days']++;
+      else if (g <= 10) dist['6-10 Days']++;
+      else if (g <= 20) dist['11-20 Days']++;
+      else if (g <= 30) dist['21-30 Days']++;
+      else dist['30+ Days']++;
+    });
+
     data = { avg, min, max, totalGaps: gaps.length, distribution: dist };
   }
 
@@ -2788,42 +2977,104 @@ function calculateTimeBetweenVisits() {
   const statsGrid = document.getElementById('tbvStats');
   if (statsGrid) {
     statsGrid.innerHTML = `
-      <div style="font-size: 13px; font-weight: 500; color: var(--text-secondary); text-align: center; padding: 4px 0;">
-        Avg Gap: <strong>${data.avg} days</strong> | Min Gap: <strong>${data.min} days</strong> | Max Gap: <strong>${data.max} days</strong> | Total Pairs: <strong>${data.totalGaps || 0}</strong>
+      <div class="stat-card">
+        <div class="stat-card__value">${data.avg}d</div>
+        <div class="stat-card__label">Avg Gap</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__value">${data.min}d</div>
+        <div class="stat-card__label">Min Gap</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__value">${data.max}d</div>
+        <div class="stat-card__label">Max Gap</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__value">${data.totalGaps || 0}</div>
+        <div class="stat-card__label">Total Pairs</div>
       </div>
     `;
   }
 
-    // Distribution chart
-    const dist = data.distribution || {};
-    const labels = Object.keys(dist).sort((a, b) => Number(a) - Number(b));
-    const values = labels.map(k => dist[k]);
+  const dist = data.distribution || {};
+  const labels = ['Same Day', '1-2 Days', '3-5 Days', '6-10 Days', '11-20 Days', '21-30 Days', '30+ Days'];
+  const values = labels.map(k => dist[k] || 0);
 
-    const canvas = document.getElementById('chartTBV');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (tbvChart) tbvChart.destroy();
-    tbvChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: labels.map(l => l + (l === '30' ? '+' : '') + 'd'),
-        datasets: [{
-          label: 'Frequency',
-          data: values,
-          backgroundColor: 'rgba(232,93,4,.7)',
-          borderRadius: 6,
-        }]
+  const canvas = document.getElementById('chartTBV');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (tbvChart) tbvChart.destroy();
+  
+  tbvChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Customer Gaps',
+        data: values,
+        backgroundColor: (context) => {
+          const chart = context.chart;
+          const { ctx: chartCtx, chartArea } = chart;
+          if (!chartArea) return 'rgba(232, 93, 4, 0.7)';
+          const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+          gradient.addColorStop(0, 'rgba(232, 93, 4, 0.4)');
+          gradient.addColorStop(1, 'rgba(255, 75, 43, 0.85)');
+          return gradient;
+        },
+        hoverBackgroundColor: (context) => {
+          const chart = context.chart;
+          const { ctx: chartCtx, chartArea } = chart;
+          if (!chartArea) return 'rgba(232, 93, 4, 0.9)';
+          const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+          gradient.addColorStop(0, 'rgba(232, 93, 4, 0.7)');
+          gradient.addColorStop(1, 'rgba(255, 75, 43, 1)');
+          return gradient;
+        },
+        borderRadius: 8,
+        borderWidth: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(26, 24, 28, 0.95)',
+          titleFont: { family: 'Outfit', size: 12, weight: 'bold' },
+          bodyFont: { family: 'Outfit', size: 12 },
+          padding: 10,
+          cornerRadius: 8,
+          displayColors: false,
+          callbacks: {
+            label: (item) => ` ${item.raw} return visits`
+          }
+        }
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { font: { family: 'Inter' } } },
-          x: { ticks: { font: { family: 'Inter', size: 10 } } }
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(128, 128, 128, 0.12)',
+            drawBorder: false
+          },
+          ticks: {
+            color: 'rgba(128, 128, 128, 0.8)',
+            font: { family: 'Outfit', size: 10 }
+          }
+        },
+        x: {
+          grid: {
+            display: false
+          },
+          ticks: {
+            color: 'rgba(128, 128, 128, 0.8)',
+            font: { family: 'Outfit', size: 10 }
+          }
         }
       }
-    });
+    }
+  });
 }
 
 // ══════════════════════════════════════
