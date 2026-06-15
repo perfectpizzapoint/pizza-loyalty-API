@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Perfect Pizza Point – Premium Customer Loyalty Tracking System" />
-  <title>Perfect Pizza Point 🍕 Loyalty</title>
+  <meta name="description" content="Perfect Pizza Point – Premium POS, Billing, and Customer Loyalty Portal" />
+  <title>Perfect Pizza Point 🍕 POS & Loyalty</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -68,12 +68,12 @@
   <section class="page-section active" id="sectionHome">
     
     <div class="hero-header">
-      <h1 class="hero-title">Loyalty <span class="text-gradient">Rewards</span></h1>
-      <p class="hero-subtitle">Track visits and reward your best customers.</p>
+      <h1 class="hero-title">POS & <span class="text-gradient">Loyalty Portal</span></h1>
+      <p class="hero-subtitle">Manage billing, track sales analytics, and reward loyal customers.</p>
     </div>
 
     <!-- Step 1: Mobile Input -->
-    <div class="card glass-card fade-in" id="cardMobile">
+    <div class="card card-white fade-in" id="cardMobile">
       <div class="card__title">
         <div class="icon-circle">📱</div>
         Customer Entry System
@@ -97,7 +97,7 @@
     </div>
 
     <!-- Step 2: Entry Form (hidden initially) -->
-    <div class="card glass-card mt-3 hidden slide-up" id="cardEntryForm">
+    <div class="card card-white mt-3 hidden slide-up" id="cardEntryForm">
       <div class="card__title">
         <div class="icon-circle">📝</div>
         New Entry Details
@@ -241,38 +241,77 @@
 
   <!-- ═══════ ALL ENTRIES SECTION ═══════ -->
   <section class="page-section wide" id="sectionAllEntries">
-    <div class="hero-header flex-between mb-3">
-      <div>
-        <h1 class="hero-title">All <span class="text-gradient">Entries</span></h1>
-        <p class="hero-subtitle">All generated bills and transaction history.</p>
+    <!-- Filters & Stats Container -->
+    <div class="entries-dashboard mb-3">
+      <!-- Mini Stats Row -->
+      <div class="tbv-stats-mini mb-3" id="entriesStatsMini" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+        <div class="stat-card">
+          <div class="stat-card__value" id="entriesTotalSales">₹0</div>
+          <div class="stat-card__label">Total Revenue</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__value" id="entriesTotalCount">0</div>
+          <div class="stat-card__label">Transactions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__value" id="entriesAvgValue">₹0</div>
+          <div class="stat-card__label">Avg Bill Value</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__value" id="entriesPaymentBreakdown">0 / 0 / 0</div>
+          <div class="stat-card__label">Cash / UPI / Card</div>
+        </div>
       </div>
     </div>
 
-    <!-- Desktop View (Table) -->
-    <div class="card glass-card fade-in hide-on-mobile">
-      <div class="glass-table-wrap" style="max-height: 600px;">
-        <table class="entry-table">
-          <thead>
-            <tr>
-              <th>Mobile Number</th>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Amount</th>
-              <th>Payment Modes</th>
-              <th>Ordered Items</th>
-              <th style="text-align: center;">Visit #</th>
-            </tr>
-          </thead>
-          <tbody id="allEntriesTableBody">
-            <!-- Entries injected here -->
-          </tbody>
-        </table>
+    <!-- Main List & Controls Card -->
+    <div class="card card-white fade-in" style="padding: 1.25rem;">
+      <!-- Controls Row (Merged inside Card) -->
+      <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-input); padding-bottom: 1rem;">
+        <!-- Left: Search input -->
+        <div style="flex: 1; min-width: 200px; position: relative;">
+          <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 1.1rem; pointer-events: none;">🔍</span>
+          <input class="form-input" id="entriesSearchInput" type="text" placeholder="Search by mobile..." oninput="filterEntries()" style="padding-left: 36px; width: 100%; font-size: 0.9rem;" />
+        </div>
+        <!-- Right: Filters -->
+        <div class="entries-filters-controls">
+          <input class="form-input" id="entriesDateFilter" type="date" onchange="filterEntries()" style="padding: 0.45rem 0.65rem; font-size: 0.85rem;" />
+          <select class="form-input" id="entriesPaymentFilter" onchange="filterEntries()" style="padding: 0.45rem 0.65rem; font-size: 0.85rem; cursor: pointer; height: auto;">
+            <option value="all">All Payments</option>
+            <option value="cash">Cash Only</option>
+            <option value="upi">UPI Only</option>
+            <option value="card">Card Only</option>
+          </select>
+          <button class="btn btn--outline btn--sm" onclick="resetEntriesFilters()" style="padding: 0.45rem 0.85rem; font-size: 0.85rem;">Reset</button>
+        </div>
       </div>
-    </div>
 
-    <!-- Mobile View (Card List) -->
-    <div class="show-on-mobile" id="allEntriesMobileList">
-      <!-- Injected here -->
+      <!-- Desktop View (Table) -->
+      <div class="hide-on-mobile">
+        <div class="glass-table-wrap" style="max-height: 550px; overflow-y: auto;">
+          <table class="entry-table">
+            <thead>
+              <tr>
+                <th>Mobile Number</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Amount</th>
+                <th>Payment Modes</th>
+                <th>Ordered Items</th>
+                <th style="text-align: center;">Visit #</th>
+              </tr>
+            </thead>
+            <tbody id="allEntriesTableBody">
+              <!-- Entries injected here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Mobile View (Card List) -->
+      <div class="show-on-mobile" id="allEntriesMobileList">
+        <!-- Injected here -->
+      </div>
     </div>
   </section>
 
@@ -281,7 +320,7 @@
     
     <!-- Login Gate -->
     <div id="adminLoginWrap" class="fade-in">
-      <div class="card glass-card login-card">
+      <div class="card card-white login-card">
         <div class="card__title justify-center">
           <div class="icon-circle mb-2">🔐</div>
         </div>
@@ -831,6 +870,21 @@
   </div>
   <!-- We don't use sandbox to ensure complex dashboards can load their scripts and cross-origin auth properly -->
   <iframe id="splitIframe" class="split-iframe"></iframe>
+</div>
+
+<!-- 📊 ALL BEST SELLERS MODAL -->
+<div class="modal-overlay hidden" id="modalBestSellersAll">
+  <div class="modal glass-modal" style="max-width: 480px;">
+    <div class="modal__header">
+      <h3 class="modal__title" id="bestSellersAllTitle" style="font-size: 1.15rem; display: flex; align-items: center; gap: 8px;">Best Sellers</h3>
+      <button class="modal__close" onclick="closeModal('modalBestSellersAll')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="modal__body" id="bestSellersAllList" style="max-height: 60vh; overflow-y: auto; padding-right: 5px;">
+      <!-- Injected via JS -->
+    </div>
+  </div>
 </div>
 
 <!--  ADD INTEGRATION MODAL  -->
