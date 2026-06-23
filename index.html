@@ -38,7 +38,7 @@
 <!-- ═══════ BOTTOM NAV DOCK ═══════ -->
 <div class="nav-dock" id="navDock">
   <div class="nav-dock__indicator" id="navIndicator"></div>
-  <button class="nav-btn active" id="navHome" onclick="showSection('home')">
+  <button class="nav-btn" id="navHome" onclick="showSection('home')">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
     <span class="nav-text">Home</span>
   </button>
@@ -46,7 +46,7 @@
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
     <span class="nav-text">Dashboard</span>
   </button>
-  <button class="nav-btn" id="navPos" onclick="showSection('pos')">
+  <button class="nav-btn active" id="navPos" onclick="showSection('pos')">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
     <span class="nav-text">POS</span>
   </button>
@@ -65,7 +65,7 @@
 
 <main class="main-content">
   <!-- ═══════ HOME / ENTRY SECTION ═══════ -->
-  <section class="page-section active" id="sectionHome">
+  <section class="page-section" id="sectionHome">
     
     <div class="hero-header">
       <h1 class="hero-title">POS & <span class="text-gradient">Loyalty Portal</span></h1>
@@ -105,8 +105,8 @@
 
       <div class="form-grid">
         <div class="form-group">
-          <label class="form-label">Mobile Number</label>
-          <input class="form-input" id="dispMobile" disabled />
+          <label class="form-label" for="dispMobile">Mobile Number</label>
+          <input class="form-input" id="dispMobile" type="tel" maxlength="10" placeholder="Enter 10-digit number" oninput="handleDispMobileInput()" />
         </div>
         <div class="form-group">
           <label class="form-label" for="inputAmount">Billing Amount (₹)</label>
@@ -194,14 +194,28 @@
   </section>
 
   <!-- ═══════ POS SECTION ═══════ -->
-  <section class="page-section wide" id="sectionPos">
+  <section class="page-section wide active" id="sectionPos">
     
     <!-- Tables View -->
     <div id="posTablesView" class="fade-in">
-      <div class="hero-header mb-3">
+      <div class="hero-header flex-between mb-3">
         <h2 class="hero-title">Select <span class="text-gradient">Table</span></h2>
+        <button id="btnLiveTables" class="btn btn--outline" onclick="openLiveTablesReport()">Live Tables</button>
       </div>
       <div class="pos-tables-grid" id="posTablesGrid"></div>
+    </div>
+
+    <!-- Live Tables Report View -->
+    <div id="posLiveTablesReportView" class="hidden fade-in">
+      <div class="hero-header flex-between mb-3">
+        <h2 class="hero-title">Live Tables <span class="text-gradient">Report</span></h2>
+        <button class="btn btn--outline" onclick="closeLiveTablesReport()">Back to Tables</button>
+      </div>
+      <div class="glass-card p-4 mt-3">
+        <div id="posLiveTablesReportContent" class="live-tables-report-content">
+          <!-- Text report populated dynamically -->
+        </div>
+      </div>
     </div>
 
     <!-- Categories View -->
@@ -312,6 +326,11 @@
       <div class="show-on-mobile" id="allEntriesMobileList">
         <!-- Injected here -->
       </div>
+
+      <!-- Load More Button -->
+      <div id="entriesLoadMoreContainer" style="text-align: center; margin-top: 1.5rem; display: none;">
+        <button class="btn btn--outline" id="btnEntriesLoadMore" onclick="loadMoreEntries()" style="min-width: 180px;">Load More</button>
+      </div>
     </div>
   </section>
 
@@ -320,20 +339,33 @@
     
     <!-- Login Gate -->
     <div id="adminLoginWrap" class="fade-in">
-      <div class="card card-white login-card">
-        <div class="card__title justify-center">
-          <div class="icon-circle mb-2">🔐</div>
+      <div class="login-card">
+        <div class="login-badge-container">
+          <div class="login-badge-circle">🔐</div>
         </div>
-        <h2 class="text-center mb-3">Admin Portal</h2>
+        <h2 class="login-title-text">Admin Workspace</h2>
+        <p class="login-subtitle-text">Enter credentials to access POS controls</p>
+        
         <div class="form-group">
           <label class="form-label" for="adminUser">Username</label>
-          <input class="form-input" id="adminUser" type="text" placeholder="Enter username" />
+          <div class="login-input-wrapper">
+            <input class="form-input" id="adminUser" type="text" placeholder="Enter username" />
+            <span class="login-input-icon">👤</span>
+          </div>
         </div>
+        
         <div class="form-group">
           <label class="form-label" for="adminPass">Password</label>
-          <input class="form-input" id="adminPass" type="password" placeholder="Enter password" />
+          <div class="login-input-wrapper">
+            <input class="form-input" id="adminPass" type="password" placeholder="Enter password" />
+            <span class="login-input-icon">🔑</span>
+          </div>
         </div>
-        <div class="error-msg" id="errLogin">Invalid credentials. Please try again.</div>
+        
+        <div class="error-msg" id="errLogin">
+          <span>⚠️</span> Invalid credentials. Please try again.
+        </div>
+        
         <button class="btn btn--primary btn--block btn--lg mt-3" id="btnLogin" onclick="handleAdminLogin()">
           Login to Dashboard
         </button>
@@ -346,110 +378,225 @@
         <h2 class="dashboard-title">POS Management</h2>
       </div>
 
-      <div class="dashboard-grid">
-        <div class="dashboard-main" style="grid-column: 1 / -1;">
-          <!-- Tables -->
-          <div class="card chart-card mb-3">
-            <div class="chart-card__header">
-              <div class="chart-card__title">🪑 Number of Tables</div>
-            </div>
-            <div class="form-group flex-row" style="display: flex; gap: 1rem; align-items: center;">
-              <input class="form-input" id="adminTableCount" type="number" min="1" placeholder="Enter number of tables" style="max-width: 200px;" />
-              <button class="btn btn--primary" onclick="saveAdminTableCount()">Save Tables</button>
-            </div>
-          </div>
+      <div class="admin-dashboard-container">
+        
+        <!-- Left Sidebar Navigation -->
+        <aside class="admin-sidebar">
+          <nav class="admin-sidebar-nav">
+            <button class="admin-nav-item active" onclick="switchAdminTab('adminTabMenu', this)">
+              <span class="nav-icon">📋</span>
+              <span class="nav-text">Menu Setup</span>
+            </button>
+            <button class="admin-nav-item" onclick="switchAdminTab('adminTabLoyalty', this)">
+              <span class="nav-icon">🎁</span>
+              <span class="nav-text">Loyalty Rewards</span>
+            </button>
+            <button class="admin-nav-item" onclick="switchAdminTab('adminTabAppearance', this)">
+              <span class="nav-icon">🎨</span>
+              <span class="nav-text">POS Theme</span>
+            </button>
+            <button class="admin-nav-item" onclick="switchAdminTab('adminTabSecurity', this)">
+              <span class="nav-icon">🔐</span>
+              <span class="nav-text">Security Config</span>
+            </button>
+          </nav>
+        </aside>
 
-          <!-- Categories -->
-          <div class="card chart-card mb-3">
-            <div class="chart-card__header">
-              <div class="chart-card__title">📂 Categories</div>
-            </div>
-            <div class="form-group flex-row mb-3" style="display: flex; gap: 1rem;">
-              <input class="form-input" id="adminCategoryName" type="text" placeholder="New Category Name" />
-              <button class="btn btn--primary" onclick="addAdminCategory()">Add Category</button>
-            </div>
-            <div class="table-responsive glass-table-wrap">
-              <table class="entry-table">
-                <thead><tr><th>ID</th><th>Name</th><th>Actions</th></tr></thead>
-                <tbody id="adminCategoriesTable"></tbody>
-              </table>
-            </div>
-          </div>
+        <!-- Right Content Area containing the tab panels -->
+        <main class="admin-content-area">
 
-          <!-- Dishes -->
-          <div class="card chart-card mb-3">
-            <div class="chart-card__header">
-              <div class="chart-card__title">🍕 Dishes</div>
-            </div>
-            <div class="form-group mb-2">
-              <label class="form-label">Select Category</label>
-              <select class="form-input" id="adminDishCategorySelect" onchange="loadAdminDishes()"></select>
-            </div>
-            <div class="form-group flex-row mb-3" style="display: flex; gap: 1rem;">
-              <input class="form-input" id="adminDishName" type="text" placeholder="Dish Name" />
-              <input class="form-input" id="adminDishAmount" type="number" placeholder="Price (₹)" style="max-width: 150px;" />
-              <button class="btn btn--primary" onclick="addAdminDish()">Add Dish</button>
-            </div>
-            <div class="table-responsive glass-table-wrap">
-              <table class="entry-table">
-                <thead><tr><th>Name</th><th>Price</th><th>Actions</th></tr></thead>
-                <tbody id="adminDishesTable"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Dish Flavours -->
-          <div class="card chart-card mb-3">
-            <div class="chart-card__header">
-              <div class="chart-card__title">🧂 Dish Types / Flavours</div>
-            </div>
-            <div class="form-group mb-2">
-              <label class="form-label">Select Category</label>
-              <select class="form-input" id="adminFlavourCategorySelect" onchange="loadAdminFlavourDishes()"></select>
-            </div>
-            <div class="form-group mb-2">
-              <label class="form-label">Select Dish</label>
-              <select class="form-input" id="adminFlavourDishSelect" onchange="loadAdminFlavours()"></select>
-            </div>
-            <div class="form-group flex-row mb-3" style="display: flex; gap: 1rem;">
-              <input class="form-input" id="adminFlavourName" type="text" placeholder="Flavour / Type Name" />
-              <button class="btn btn--primary" onclick="addAdminFlavour()">Add Flavour</button>
-            </div>
-            <div class="table-responsive glass-table-wrap">
-              <table class="entry-table">
-                <thead><tr><th>Flavour Name</th><th>Actions</th></tr></thead>
-                <tbody id="adminFlavoursTable"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- System Settings -->
-          <div class="card chart-card mb-3">
-            <div class="chart-card__header">
-              <div class="chart-card__title">⚙️ System Settings</div>
-            </div>
-            <div class="admin-setting-row">
-              <div class="admin-setting-info">
-                <span class="admin-setting-label">🎁 Reward System</span>
-                <span class="admin-setting-desc">When OFF, all transactions generate bills only — no loyalty entries or rewards are recorded.</span>
+          <!-- Tab 1: Menu Setup -->
+          <div class="admin-tab-panel active" id="adminTabMenu">
+            <!-- Tables -->
+            <div class="card chart-card mb-3">
+              <div class="chart-card__header">
+                <div class="chart-card__title">🪑 Number of Tables</div>
               </div>
-              <label class="reward-toggle-switch" for="adminRewardToggle">
-                <input type="checkbox" id="adminRewardToggle" checked onchange="handleAdminToggleRewardSystem(this)" />
-                <span class="reward-toggle-slider"></span>
-              </label>
+              <div class="form-group form-row-responsive">
+                <input class="form-input" id="adminTableCount" type="number" min="1" placeholder="Enter number of tables" style="max-width: 200px;" />
+                <button class="btn btn--primary" onclick="saveAdminTableCount()">Save Tables</button>
+              </div>
             </div>
-            <div class="admin-setting-status" id="rewardToggleStatus">
-              <span class="reward-status-badge reward-status-on" id="rewardStatusBadge">● Reward System is ON</span>
+
+            <!-- Categories -->
+            <div class="card chart-card mb-3">
+              <div class="chart-card__header">
+                <div class="chart-card__title">📂 Categories</div>
+              </div>
+              <div class="form-group form-row-responsive mb-3">
+                <input class="form-input" id="adminCategoryName" type="text" placeholder="New Category Name" />
+                <button class="btn btn--primary" onclick="addAdminCategory()">Add Category</button>
+              </div>
+              <div class="table-responsive glass-table-wrap">
+                <table class="entry-table">
+                  <thead><tr><th>ID</th><th>Name</th><th>Actions</th></tr></thead>
+                  <tbody id="adminCategoriesTable"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Dishes -->
+            <div class="card chart-card mb-3">
+              <div class="chart-card__header">
+                <div class="chart-card__title">🍕 Dishes</div>
+              </div>
+              <div class="form-group mb-2">
+                <label class="form-label">Select Category</label>
+                <select class="form-input" id="adminDishCategorySelect" onchange="loadAdminDishes()"></select>
+              </div>
+              <div class="form-group form-row-responsive mb-3">
+                <input class="form-input" id="adminDishName" type="text" placeholder="Dish Name" />
+                <input class="form-input" id="adminDishAmount" type="number" placeholder="Price (₹)" style="max-width: 150px;" />
+                <button class="btn btn--primary" onclick="addAdminDish()">Add Dish</button>
+              </div>
+              <div class="table-responsive glass-table-wrap">
+                <table class="entry-table">
+                  <thead><tr><th>Name</th><th>Price</th><th>Actions</th></tr></thead>
+                  <tbody id="adminDishesTable"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Dish Flavours -->
+            <div class="card chart-card mb-3">
+              <div class="chart-card__header">
+                <div class="chart-card__title">🧂 Dish Types / Flavours</div>
+              </div>
+              <div class="form-group mb-2">
+                <label class="form-label">Select Category</label>
+                <select class="form-input" id="adminFlavourCategorySelect" onchange="loadAdminFlavourDishes()"></select>
+              </div>
+              <div class="form-group mb-2">
+                <label class="form-label">Select Dish</label>
+                <select class="form-input" id="adminFlavourDishSelect" onchange="loadAdminFlavours()"></select>
+              </div>
+              <div class="form-group form-row-responsive mb-3">
+                <input class="form-input" id="adminFlavourName" type="text" placeholder="Flavour / Type Name" />
+                <button class="btn btn--primary" onclick="addAdminFlavour()">Add Flavour</button>
+              </div>
+              <div class="table-responsive glass-table-wrap">
+                <table class="entry-table">
+                  <thead><tr><th>Flavour Name</th><th>Actions</th></tr></thead>
+                  <tbody id="adminFlavoursTable"></tbody>
+                </table>
+              </div>
             </div>
           </div>
 
-        </div>
+          <!-- Tab 2: Loyalty Rewards -->
+          <div class="admin-tab-panel" id="adminTabLoyalty">
+            <!-- System Settings -->
+            <div class="card chart-card mb-3">
+              <div class="chart-card__header">
+                <div class="chart-card__title">⚙️ System Settings</div>
+              </div>
+              <div class="admin-setting-row">
+                <div class="admin-setting-info">
+                  <span class="admin-setting-label">🎁 Reward System</span>
+                  <span class="admin-setting-desc">When OFF, all transactions generate bills only — no loyalty entries or rewards are recorded.</span>
+                </div>
+                <label class="reward-toggle-switch" for="adminRewardToggle">
+                  <input type="checkbox" id="adminRewardToggle" checked onchange="handleAdminToggleRewardSystem(this)" />
+                  <span class="reward-toggle-slider"></span>
+                </label>
+              </div>
+              <div class="admin-setting-status" id="rewardToggleStatus">
+                <span class="reward-status-badge reward-status-on" id="rewardStatusBadge">● Reward System is ON</span>
+              </div>
+            </div>
+
+            <!-- Loyalty Reward Settings -->
+            <div class="card chart-card mb-3">
+              <div class="chart-card__header">
+                <div class="chart-card__title">⚙️ Loyalty Reward Settings</div>
+              </div>
+              <div class="admin-setting-row" style="display: flex; flex-direction: column; align-items: stretch; gap: 1rem; padding: 1rem 1.25rem 1.5rem;">
+                <span class="admin-setting-desc" style="margin-bottom: 0.5rem;">Configure minimum amount, visit cycle, and reward valuation:</span>
+                
+                <div class="form-group mb-2">
+                  <label class="form-label" for="adminMinAmount">Minimum Bill Amount (₹)</label>
+                  <input class="form-input" id="adminMinAmount" type="number" min="0" placeholder="e.g., 100" />
+                </div>
+                <div class="form-group mb-2">
+                  <label class="form-label" for="adminCycle">Visits Cycle Length</label>
+                  <input class="form-input" id="adminCycle" type="number" min="1" placeholder="e.g., 10" />
+                </div>
+                <div class="form-group mb-2">
+                  <label class="form-label" for="adminRewardValue">Reward Valuation Amount (₹)</label>
+                  <input class="form-input" id="adminRewardValue" type="number" min="0" placeholder="e.g., 150" />
+                </div>
+                
+                <button class="btn btn--primary" id="btnUpdateRewardConfig" onclick="saveAdminRewardConfig()" style="width: 100%; margin-top: 0.5rem;">
+                  Save Configurations
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 3: Appearance -->
+          <div class="admin-tab-panel" id="adminTabAppearance">
+            <!-- POS Theme Settings -->
+            <div class="card chart-card mb-3">
+              <div class="chart-card__header">
+                <div class="chart-card__title">🎨 POS Theme Settings</div>
+              </div>
+              <div class="admin-setting-row" style="display: flex; flex-direction: column; align-items: stretch; gap: 1rem; padding: 1rem 1.25rem 1.5rem;">
+                <span class="admin-setting-desc" style="margin-bottom: 0.5rem;">Select a premium theme color preset for the POS system:</span>
+                <div class="theme-options-grid" id="adminThemeOptionsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem;">
+                  <!-- Injected dynamically via JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 4: Security -->
+          <div class="admin-tab-panel" id="adminTabSecurity">
+            <!-- Admin Credentials Settings -->
+            <div class="card chart-card mb-3">
+              <div class="chart-card__header">
+                <div class="chart-card__title">🔐 Security Settings</div>
+              </div>
+              <div class="admin-setting-row" style="display: flex; flex-direction: column; align-items: stretch; gap: 1rem; padding: 1rem 1.25rem 1.5rem;">
+                <span class="admin-setting-desc" style="margin-bottom: 0.5rem;">Change admin username and password credentials:</span>
+                
+                <div class="form-group mb-2">
+                  <label class="form-label" for="newAdminUser">New Username</label>
+                  <input class="form-input" id="newAdminUser" type="text" placeholder="Enter new username" />
+                </div>
+                <div class="form-group mb-2">
+                  <label class="form-label" for="newAdminPass">New Password</label>
+                  <input class="form-input" id="newAdminPass" type="password" placeholder="Enter new password" />
+                </div>
+                <div class="form-group mb-2">
+                  <label class="form-label" for="confirmAdminPass">Confirm New Password</label>
+                  <input class="form-input" id="confirmAdminPass" type="password" placeholder="Confirm new password" />
+                </div>
+                
+                <button class="btn btn--primary" id="btnUpdateAdminCreds" onclick="saveAdminCreds()" style="width: 100%; margin-top: 0.5rem;">
+                  Save Credentials
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </main>
       </div>
     </div>
   </section>
 
   <!-- ═══════ DASHBOARD SECTION (PUBLIC) ═══════ -->
   <section class="page-section wide" id="sectionDashboard">
+
+    <!-- Dashboard Loading Overlay -->
+    <div id="dashboardLoadingOverlay" class="dashboard-loading-overlay">
+      <div class="dashboard-loading-card">
+        <div class="pizza-loader">🍕</div>
+        <div class="loading-bar-container">
+          <div class="loading-bar-fill"></div>
+        </div>
+        <div class="loading-text">Assembling Analytics...</div>
+      </div>
+    </div>
 
     <!-- ZONE A: COMMAND HEADER -->
     <div class="dashboard-command-header" id="dashboardCommandHeader">
