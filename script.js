@@ -3347,8 +3347,7 @@ let POS_STATE = {
   categories: [],
   dishes: [], // dishes for current category
   tableOrders: JSON.parse(localStorage.getItem('ppp_tables') || '{}'),
-  flavoursMap: {},
-  tableCategories: []
+  flavoursMap: {}
 };
 
 function getUniqueTablesTopic() {
@@ -3385,18 +3384,15 @@ function startTablesEventListener() {
           const res = await apiDirect({ action: 'getTablesData' });
           if (res && !res.error) {
             // Merge server orders without overwriting the table currently being edited locally
-            POS_STATE.tableCategories.forEach(cat => {
-              for (let i = 1; i <= cat.tableCount; i++) {
-                const tableId = `${cat.index}-${i}`;
-                if (tableId === POS_STATE.currentTableId) {
-                  if (!POS_STATE.tableOrders[tableId]) {
-                    POS_STATE.tableOrders[tableId] = {};
-                  }
-                  continue;
+            for (let i = 1; i <= POS_STATE.tableCount; i++) {
+              if (i === POS_STATE.currentTableId) {
+                if (!POS_STATE.tableOrders[i]) {
+                  POS_STATE.tableOrders[i] = {};
                 }
-                POS_STATE.tableOrders[tableId] = res[tableId] || {};
+                continue;
               }
-            });
+              POS_STATE.tableOrders[i] = res[i] || {};
+            }
             localStorage.setItem('ppp_tables', JSON.stringify(POS_STATE.tableOrders));
             
             // Re-render UI depending on active view
@@ -3445,12 +3441,13 @@ async function notifyTableUpdate(tableId) {
 }
 
 async function initPos() {
-  // Fetch table categories first
-  try {
-    const res = await api({ action: 'getTableCategories' });
-    POS_STATE.tableCategories = res.categories || [];
-  } catch (e) {
-    console.error('Failed to load table categories', e);
+  if (POS_STATE.tableCount === 0) {
+    try {
+      const res = await api({ action: 'getTableCount' });
+      POS_STATE.tableCount = res.count || 0;
+    } catch (e) {
+      console.error('Failed to load table count', e);
+    }
   }
 
   // Fetch active table orders from Google Sheets on start
@@ -3458,12 +3455,9 @@ async function initPos() {
     const serverOrders = await apiDirect({ action: 'getTablesData' });
     if (serverOrders && !serverOrders.error) {
       POS_STATE.tableOrders = {};
-      POS_STATE.tableCategories.forEach(cat => {
-        for (let i = 1; i <= cat.tableCount; i++) {
-          const tableId = `${cat.index}-${i}`;
-          POS_STATE.tableOrders[tableId] = serverOrders[tableId] || {};
-        }
-      });
+      for (let i = 1; i <= POS_STATE.tableCount; i++) {
+        POS_STATE.tableOrders[i] = serverOrders[i] || {};
+      }
       localStorage.setItem('ppp_tables', JSON.stringify(POS_STATE.tableOrders));
     }
   } catch (e) {
@@ -3538,33 +3532,30 @@ function updateTableTimers() {
   const view = document.getElementById('posTablesView');
   if (!view || view.classList.contains('hidden')) return;
   
-  POS_STATE.tableCategories.forEach(cat => {
-    for (let i = 1; i <= cat.tableCount; i++) {
-      const tableId = `${cat.index}-${i}`;
-      const timerEl = document.getElementById(`table-timer-${tableId}`);
-      if (!timerEl) continue;
+  for (let i = 1; i <= POS_STATE.tableCount; i++) {
+    const timerEl = document.getElementById(`table-timer-${i}`);
+    if (!timerEl) continue;
+    
+    const order = POS_STATE.tableOrders[i];
+    const hasOrder = order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0);
+    
+    if (hasOrder && order.occupiedSince) {
+      const elapsedMs = Date.now() - order.occupiedSince;
+      const elapsedSec = Math.floor(elapsedMs / 1000);
+      const hrs = Math.floor(elapsedSec / 3600);
+      const mins = Math.floor((elapsedSec % 3600) / 60);
+      const secs = elapsedSec % 60;
       
-      const order = POS_STATE.tableOrders[tableId];
-      const hasOrder = order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0);
+      const pad = (num) => String(num).padStart(2, '0');
+      const timeStr = hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
       
-      if (hasOrder && order.occupiedSince) {
-        const elapsedMs = Date.now() - order.occupiedSince;
-        const elapsedSec = Math.floor(elapsedMs / 1000);
-        const hrs = Math.floor(elapsedSec / 3600);
-        const mins = Math.floor((elapsedSec % 3600) / 60);
-        const secs = elapsedSec % 60;
-        
-        const pad = (num) => String(num).padStart(2, '0');
-        const timeStr = hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
-        
-        timerEl.textContent = `⏱️ ${timeStr}`;
-        timerEl.style.display = 'inline-flex';
-      } else {
-        timerEl.textContent = '';
-        timerEl.style.display = 'none';
-      }
+      timerEl.textContent = `⏱️ ${timeStr}`;
+      timerEl.style.display = 'inline-flex';
+    } else {
+      timerEl.textContent = '';
+      timerEl.style.display = 'none';
     }
-  });
+  }
 }
 
 // Start updating table timers globally every second
@@ -3579,85 +3570,65 @@ function showPosTables() {
   hide('posLiveTablesReportView');
   show('posTablesView');
   
-  const container = document.getElementById('posTablesGrid');
-  container.innerHTML = '';
-  container.style.display = 'block';
+  const grid = document.getElementById('posTablesGrid');
+  grid.innerHTML = '';
   
-  if (POS_STATE.tableCategories.length === 0) {
-    container.innerHTML = '<p style="text-align:center; padding: 2rem 0; width: 100%;">No table categories configured. Please configure in Admin.</p>';
+  if (POS_STATE.tableCount === 0) {
+    grid.innerHTML = '<p style="grid-column:1/-1; text-align:center;">No tables configured. Please configure in Admin.</p>';
     return;
   }
   
-    POS_STATE.tableCategories.forEach(cat => {
-      const section = document.createElement('div');
-      section.className = 'pos-table-category-section mb-4';
-      
-      const title = document.createElement('h3');
-      title.className = 'pos-table-category-title mb-3';
-      title.innerHTML = cat.name;
-      section.appendChild(title);
-      
-      const grid = document.createElement('div');
-      grid.className = 'pos-tables-grid';
-      grid.style.display = 'grid';
-      
-      for (let i = 1; i <= cat.tableCount; i++) {
-        const tableId = `${cat.index}-${i}`;
-        const card = document.createElement('div');
-        card.onclick = () => openPosTable(tableId);
-        
-        const order = POS_STATE.tableOrders[tableId];
-        const hasOrder = order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0);
-        
-        if (hasOrder) {
-          card.className = 'pos-table-card occupied';
-          
-          let totalBill = 0;
-          const itemList = [];
-          Object.keys(order).forEach(k => {
-            if (k !== 'occupiedSince' && order[k].qty > 0) {
-              const name = order[k].dishName || order[k].name;
-              const variantSuffix = order[k].flavour ? ` (${order[k].flavour})` : '';
-              itemList.push(`${order[k].qty}x ${name}${variantSuffix}`);
-              totalBill += (order[k].qty * order[k].price);
-            }
-          });
-          
-          const itemsSummary = itemList.join(', ');
-          
-          card.innerHTML = `
-            <div class="table-card-header">
-              <span class="table-badge occupied">Occupied</span>
-              <span class="table-bill-total">₹${totalBill}</span>
-            </div>
-            <div class="table-card-body">
-              <div class="table-icon">🍽️</div>
-              <div class="table-name">${cat.name} - ${i}</div>
-              <div class="table-timer" id="table-timer-${tableId}">⏱️ --:--</div>
-            </div>
-            ${itemsSummary ? `<div class="table-items-list"><div class="table-items-summary" title="${itemsSummary}">${itemsSummary}</div></div>` : ''}
-          `;
-        } else {
-          card.className = 'pos-table-card free';
-          card.innerHTML = `
-            <div class="table-card-header">
-              <span class="table-badge free">Free</span>
-              <span></span>
-            </div>
-            <div class="table-card-body">
-              <div class="table-icon">🪑</div>
-              <div class="table-name">${cat.name} - ${i}</div>
-              <div class="table-timer" id="table-timer-${tableId}" style="display: none;"></div>
-            </div>
-          `;
-        }
-        grid.appendChild(card);
-      }
+  for (let i = 1; i <= POS_STATE.tableCount; i++) {
+    const card = document.createElement('div');
+    card.onclick = () => openPosTable(i);
     
-    section.appendChild(grid);
-    container.appendChild(section);
-  });
-  
+    const order = POS_STATE.tableOrders[i];
+    const hasOrder = order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0);
+    
+    if (hasOrder) {
+      card.className = 'pos-table-card occupied';
+      
+      let totalBill = 0;
+      const itemList = [];
+      Object.keys(order).forEach(k => {
+        if (k !== 'occupiedSince' && order[k].qty > 0) {
+          const name = order[k].dishName || order[k].name;
+          const variantSuffix = order[k].flavour ? ` (${order[k].flavour})` : '';
+          itemList.push(`${order[k].qty}x ${name}${variantSuffix}`);
+          totalBill += (order[k].qty * order[k].price);
+        }
+      });
+      
+      const itemsSummary = itemList.join(', ');
+      
+      card.innerHTML = `
+        <div class="table-card-header">
+          <span class="table-badge occupied">Occupied</span>
+          <span class="table-bill-total">₹${totalBill}</span>
+        </div>
+        <div class="table-card-body">
+          <div class="table-icon">🍕</div>
+          <div class="table-name">Table ${i}</div>
+          <div class="table-timer" id="table-timer-${i}">⏱️ --:--</div>
+        </div>
+        ${itemsSummary ? `<div class="table-items-list"><div class="table-items-summary" title="${itemsSummary}">${itemsSummary}</div></div>` : ''}
+      `;
+    } else {
+      card.className = 'pos-table-card free';
+      card.innerHTML = `
+        <div class="table-card-header">
+          <span class="table-badge free">Free</span>
+          <span></span>
+        </div>
+        <div class="table-card-body">
+          <div class="table-icon">🪑</div>
+          <div class="table-name">Table ${i}</div>
+          <div class="table-timer" id="table-timer-${i}" style="display: none;"></div>
+        </div>
+      `;
+    }
+    grid.appendChild(card);
+  }
   updateTableTimers();
 }
 
@@ -3706,19 +3677,12 @@ function renderLiveTablesReportContent() {
   content.innerHTML = '';
   
   const occupiedTables = [];
-  POS_STATE.tableCategories.forEach(cat => {
-    for (let i = 1; i <= cat.tableCount; i++) {
-      const tableId = `${cat.index}-${i}`;
-      const order = POS_STATE.tableOrders[tableId];
-      if (order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0)) {
-        occupiedTables.push({
-          id: tableId,
-          tableName: `${cat.name} - ${i}`,
-          order: order
-        });
-      }
+  for (let i = 1; i <= POS_STATE.tableCount; i++) {
+    const order = POS_STATE.tableOrders[i];
+    if (order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0)) {
+      occupiedTables.push({ id: i, order: order });
     }
-  });
+  }
   
   if (occupiedTables.length === 0) {
     content.innerHTML = '<p style="text-align:center; color:var(--text-muted); font-size:1.1rem; padding: 2.5rem 0;">No tables are currently occupied.</p>';
@@ -3729,7 +3693,7 @@ function renderLiveTablesReportContent() {
   let totalRevenue = 0;
   
   occupiedTables.forEach(item => {
-    const tableName = item.tableName;
+    const tableId = item.id;
     const order = item.order;
     
     // Calculate elapsed time details
@@ -3777,7 +3741,7 @@ function renderLiveTablesReportContent() {
     html += `
       <div class="report-table-card glass-card mb-4">
         <div class="report-table-header">
-          <h3 class="report-table-title">${tableName}</h3>
+          <h3 class="report-table-title">Table ${tableId}</h3>
           <div class="report-table-meta">
             <span class="report-meta-badge">Occupied since: ${timeStr} (${durationStr})</span>
           </div>
@@ -4279,115 +4243,16 @@ function proceedToCheckout() {
 //  POS ADMIN LOGIC
 // ══════════════════════════════════════
 
-async function loadAdminTableCategories() {
-  try {
-    const res = await api({ action: 'getTableCategories' });
-    POS_STATE.tableCategories = res.categories || [];
-    
-    const tbody = document.getElementById('adminTableCategoriesTable');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    
-    POS_STATE.tableCategories.forEach(cat => {
-      const tr = document.createElement('tr');
-      tr.id = `table-cat-row-${cat.index}`;
-      tr.innerHTML = `
-        <td>${cat.index}</td>
-        <td class="cat-name-cell">${cat.name}</td>
-        <td class="cat-count-cell">${cat.tableCount}</td>
-        <td style="text-align: right; white-space: nowrap;">
-          <button class="btn btn--outline btn--sm mr-1 edit-btn" onclick="toggleEditTableCategory(${cat.index})">✏️ Edit</button>
-          <button class="btn btn--danger btn--sm" onclick="deleteAdminTableCategory(${cat.index})">Delete</button>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-  } catch (e) {
-    console.error('Failed to load table categories', e);
-  }
-}
-
-function toggleEditTableCategory(index) {
-  const tr = document.getElementById(`table-cat-row-${index}`);
-  if (!tr) return;
-  
-  const cat = POS_STATE.tableCategories.find(c => c.index === index);
-  if (!cat) return;
-  
-  const nameCell = tr.querySelector('.cat-name-cell');
-  const countCell = tr.querySelector('.cat-count-cell');
-  const actionsCell = tr.querySelector('td:last-child');
-  
-  nameCell.innerHTML = `<input type="text" class="form-input form-input--sm" id="edit-table-cat-name-${index}" value="${cat.name}" style="width: 100%; max-width: 300px; padding: 0.25rem 0.5rem; background: var(--bg-hover); border: 1px solid var(--border-card);" />`;
-  countCell.innerHTML = `<input type="number" class="form-input form-input--sm" id="edit-table-cat-count-${index}" value="${cat.tableCount}" min="1" style="width: 80px; padding: 0.25rem 0.5rem; background: var(--bg-hover); border: 1px solid var(--border-card);" />`;
-  
-  actionsCell.innerHTML = `
-    <button class="btn btn--primary btn--sm mr-1" onclick="saveEditedTableCategory(${index})">💾 Save</button>
-    <button class="btn btn--outline btn--sm" onclick="loadAdminTableCategories()">❌ Cancel</button>
-  `;
-}
-
-async function saveEditedTableCategory(index) {
-  const name = document.getElementById(`edit-table-cat-name-${index}`).value.trim();
-  const count = parseInt(document.getElementById(`edit-table-cat-count-${index}`).value, 10);
-  
-  if (!name) return toast('Category name cannot be empty', 'error');
-  if (isNaN(count) || count < 1) return toast('Table count must be at least 1', 'error');
+async function saveAdminTableCount() {
+  const count = parseInt(document.getElementById('adminTableCount').value, 10);
+  if (isNaN(count) || count < 1) return toast('Invalid table count', 'error');
   
   try {
-    const res = await api({ action: 'saveTableCategory', index: index, name: name, tableCount: count });
-    if (res && res.success) {
-      toast('Table category updated', 'success');
-      await loadAdminTableCategories();
-      notifyTableUpdate('config');
-    } else {
-      toast('Failed to update table category', 'error');
-    }
-  } catch (e) {
-    toast('Error updating table category', 'error');
-  }
-}
-
-async function addAdminTableCategory() {
-  const nameInput = document.getElementById('adminTableCatName');
-  const countInput = document.getElementById('adminTableCatCount');
-  
-  const name = nameInput.value.trim();
-  const count = parseInt(countInput.value, 10);
-  
-  if (!name) return toast('Please enter a category name', 'error');
-  if (isNaN(count) || count < 1) return toast('Please enter a valid table count', 'error');
-  
-  try {
-    const res = await api({ action: 'saveTableCategory', name: name, tableCount: count });
-    if (res && res.success) {
-      toast('Table category added successfully', 'success');
-      nameInput.value = '';
-      countInput.value = '';
-      await loadAdminTableCategories();
-      notifyTableUpdate('config');
-    } else {
-      toast('Failed to add table category', 'error');
-    }
-  } catch (e) {
-    toast('Error adding table category', 'error');
-  }
-}
-
-async function deleteAdminTableCategory(index) {
-  if (!confirm('Are you sure you want to delete this table category? All tables in this category will be removed.')) return;
-  
-  try {
-    const res = await api({ action: 'deleteTableCategory', index: index });
-    if (res && res.success) {
-      toast('Table category deleted', 'success');
-      await loadAdminTableCategories();
-      notifyTableUpdate('config');
-    } else {
-      toast('Failed to delete table category', 'error');
-    }
-  } catch (e) {
-    toast('Error deleting table category', 'error');
+    await api({ action: 'saveTableCount', count });
+    POS_STATE.tableCount = count;
+    toast('Table count saved', 'success');
+  } catch(e) {
+    toast('Failed to save table count', 'error');
   }
 }
 
@@ -4729,7 +4594,14 @@ async function loadAdminPOSConfig() {
     selectFlavourDish.innerHTML = '<option value="">-- Select Category First --</option>';
   }
   
-  loadAdminTableCategories();
+  try {
+    const res = await api({ action: 'getTableCount' });
+    const input = document.getElementById('adminTableCount');
+    if (input) input.value = res.count || '';
+    POS_STATE.tableCount = res.count || 0;
+  } catch(e) {
+    console.error('Failed to load table count in POS configuration', e);
+  }
 
   // Prefill Loyalty Reward Settings inputs from current APP_CONFIG
   const inputMinAmount = document.getElementById('adminMinAmount');
