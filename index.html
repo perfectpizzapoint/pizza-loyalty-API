@@ -407,14 +407,29 @@
 
           <!-- Tab 1: Menu Setup -->
           <div class="admin-tab-panel active" id="adminTabMenu">
-            <!-- Tables -->
+            <!-- Table Layout Sections -->
             <div class="card chart-card mb-3">
               <div class="chart-card__header">
-                <div class="chart-card__title">🪑 Number of Tables</div>
+                <div class="chart-card__title">🪑 Table Layout & Sections</div>
               </div>
-              <div class="form-group form-row-responsive">
-                <input class="form-input" id="adminTableCount" type="number" min="1" placeholder="Enter number of tables" style="max-width: 200px;" />
-                <button class="btn btn--primary" onclick="saveAdminTableCount()">Save Tables</button>
+              <div class="form-group form-row-responsive mb-3">
+                <input class="form-input" id="adminTableCategoryName" type="text" placeholder="Section Name (e.g. AC Section)" style="flex-grow: 1;" />
+                <input class="form-input" id="adminTableCategoryCount" type="number" min="1" placeholder="Table Count" style="max-width: 150px;" />
+                <button class="btn btn--primary" onclick="addAdminTableCategory()">Add Section</button>
+              </div>
+              <div class="table-responsive glass-table-wrap">
+                <table class="glass-table">
+                  <thead>
+                    <tr>
+                      <th>Section Name</th>
+                      <th>Number of Tables</th>
+                      <th style="width: 150px; text-align: center;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminTableCategoriesTable">
+                    <!-- Loaded dynamically -->
+                  </tbody>
+                </table>
               </div>
             </div>
 
