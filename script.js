@@ -3342,6 +3342,7 @@ function calculateTimeBetweenVisits() {
 
 let POS_STATE = {
   tableCount: 0,
+  tableCategories: [], // Configured table layout categories/sections
   currentTableId: null,
   currentCategoryIndex: null,
   categories: [],
@@ -3349,6 +3350,27 @@ let POS_STATE = {
   tableOrders: JSON.parse(localStorage.getItem('ppp_tables') || '{}'),
   flavoursMap: {}
 };
+
+function initializeLocalTableOrders(serverOrders) {
+  POS_STATE.tableOrders = {};
+  if (POS_STATE.tableCategories && POS_STATE.tableCategories.length > 0) {
+    let globalIndex = 1;
+    POS_STATE.tableCategories.forEach(cat => {
+      const count = Number(cat.count) || 0;
+      for (let i = 1; i <= count; i++) {
+        const uniqueId = `table_${cat.id}_${i}`;
+        // Map from server unique ID, or fallback to the old global numerical index if present
+        POS_STATE.tableOrders[uniqueId] = (serverOrders && (serverOrders[uniqueId] || serverOrders[globalIndex])) || {};
+        globalIndex++;
+      }
+    });
+  } else {
+    // Fallback if no categories
+    for (let i = 1; i <= POS_STATE.tableCount; i++) {
+      POS_STATE.tableOrders[i] = (serverOrders && serverOrders[i]) || {};
+    }
+  }
+}
 
 function getUniqueTablesTopic() {
   try {
@@ -3384,14 +3406,30 @@ function startTablesEventListener() {
           const res = await apiDirect({ action: 'getTablesData' });
           if (res && !res.error) {
             // Merge server orders without overwriting the table currently being edited locally
-            for (let i = 1; i <= POS_STATE.tableCount; i++) {
-              if (i === POS_STATE.currentTableId) {
-                if (!POS_STATE.tableOrders[i]) {
-                  POS_STATE.tableOrders[i] = {};
+            if (POS_STATE.tableCategories && POS_STATE.tableCategories.length > 0) {
+              POS_STATE.tableCategories.forEach(cat => {
+                const count = Number(cat.count) || 0;
+                for (let i = 1; i <= count; i++) {
+                  const uniqueId = `table_${cat.id}_${i}`;
+                  if (uniqueId === POS_STATE.currentTableId) {
+                    if (!POS_STATE.tableOrders[uniqueId]) {
+                      POS_STATE.tableOrders[uniqueId] = {};
+                    }
+                    continue;
+                  }
+                  POS_STATE.tableOrders[uniqueId] = res[uniqueId] || {};
                 }
-                continue;
+              });
+            } else {
+              for (let i = 1; i <= POS_STATE.tableCount; i++) {
+                if (i === POS_STATE.currentTableId) {
+                  if (!POS_STATE.tableOrders[i]) {
+                    POS_STATE.tableOrders[i] = {};
+                  }
+                  continue;
+                }
+                POS_STATE.tableOrders[i] = res[i] || {};
               }
-              POS_STATE.tableOrders[i] = res[i] || {};
             }
             localStorage.setItem('ppp_tables', JSON.stringify(POS_STATE.tableOrders));
             
@@ -3441,23 +3479,19 @@ async function notifyTableUpdate(tableId) {
 }
 
 async function initPos() {
-  if (POS_STATE.tableCount === 0) {
-    try {
-      const res = await api({ action: 'getTableCount' });
-      POS_STATE.tableCount = res.count || 0;
-    } catch (e) {
-      console.error('Failed to load table count', e);
-    }
+  try {
+    const res = await api({ action: 'getTableCount' });
+    POS_STATE.tableCount = res.count || 0;
+    POS_STATE.tableCategories = res.categories || [];
+  } catch (e) {
+    console.error('Failed to load table count and categories', e);
   }
 
   // Fetch active table orders from Google Sheets on start
   try {
     const serverOrders = await apiDirect({ action: 'getTablesData' });
     if (serverOrders && !serverOrders.error) {
-      POS_STATE.tableOrders = {};
-      for (let i = 1; i <= POS_STATE.tableCount; i++) {
-        POS_STATE.tableOrders[i] = serverOrders[i] || {};
-      }
+      initializeLocalTableOrders(serverOrders);
       localStorage.setItem('ppp_tables', JSON.stringify(POS_STATE.tableOrders));
     }
   } catch (e) {
@@ -3532,11 +3566,11 @@ function updateTableTimers() {
   const view = document.getElementById('posTablesView');
   if (!view || view.classList.contains('hidden')) return;
   
-  for (let i = 1; i <= POS_STATE.tableCount; i++) {
-    const timerEl = document.getElementById(`table-timer-${i}`);
-    if (!timerEl) continue;
+  const updateTimerElement = (uniqueId) => {
+    const timerEl = document.getElementById(`table-timer-${uniqueId}`);
+    if (!timerEl) return;
     
-    const order = POS_STATE.tableOrders[i];
+    const order = POS_STATE.tableOrders[uniqueId];
     const hasOrder = order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0);
     
     if (hasOrder && order.occupiedSince) {
@@ -3555,12 +3589,78 @@ function updateTableTimers() {
       timerEl.textContent = '';
       timerEl.style.display = 'none';
     }
+  };
+
+  if (POS_STATE.tableCategories && POS_STATE.tableCategories.length > 0) {
+    POS_STATE.tableCategories.forEach(cat => {
+      const count = Number(cat.count) || 0;
+      for (let i = 1; i <= count; i++) {
+        updateTimerElement(`table_${cat.id}_${i}`);
+      }
+    });
+  } else {
+    for (let i = 1; i <= POS_STATE.tableCount; i++) {
+      updateTimerElement(i);
+    }
   }
 }
 
 // Start updating table timers globally every second
 if (!window.tableTimerInterval) {
   window.tableTimerInterval = setInterval(updateTableTimers, 1000);
+}
+
+function createTableCard(uniqueId, displayNum, categoryName) {
+  const card = document.createElement('div');
+  card.onclick = () => openPosTable(uniqueId);
+  card.setAttribute('data-table-id', uniqueId);
+  
+  const order = POS_STATE.tableOrders[uniqueId];
+  const hasOrder = order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0);
+  
+  if (hasOrder) {
+    card.className = 'pos-table-card occupied';
+    
+    let totalBill = 0;
+    const itemList = [];
+    Object.keys(order).forEach(k => {
+      if (k !== 'occupiedSince' && order[k].qty > 0) {
+        const name = order[k].dishName || order[k].name;
+        const variantSuffix = order[k].flavour ? ` (${order[k].flavour})` : '';
+        itemList.push(`${order[k].qty}x ${name}${variantSuffix}`);
+        totalBill += (order[k].qty * order[k].price);
+      }
+    });
+    
+    const itemsSummary = itemList.join(', ');
+    
+    card.innerHTML = `
+      <div class="table-card-header">
+        <span class="table-badge occupied">Occupied</span>
+        <span class="table-bill-total">₹${totalBill}</span>
+      </div>
+      <div class="table-card-body">
+        <div class="table-icon">🍕</div>
+        <div class="table-name">Table ${displayNum}</div>
+        <div class="table-timer" id="table-timer-${uniqueId}">⏱️ --:--</div>
+      </div>
+      ${itemsSummary ? `<div class="table-items-list"><div class="table-items-summary" title="${itemsSummary}">${itemsSummary}</div></div>` : ''}
+    `;
+  } else {
+    card.className = 'pos-table-card free';
+    card.innerHTML = `
+      <div class="table-card-header">
+        <span class="table-badge free">Free</span>
+        <span></span>
+      </div>
+      <div class="table-card-body">
+        <div class="table-icon">🪑</div>
+        <div class="table-name">Table ${displayNum}</div>
+        <div class="table-timer" id="table-timer-${uniqueId}" style="display: none;"></div>
+      </div>
+    `;
+  }
+  return card;
 }
 
 function showPosTables() {
@@ -3570,64 +3670,53 @@ function showPosTables() {
   hide('posLiveTablesReportView');
   show('posTablesView');
   
-  const grid = document.getElementById('posTablesGrid');
-  grid.innerHTML = '';
+  const container = document.getElementById('posTablesGrid');
+  container.innerHTML = '';
   
   if (POS_STATE.tableCount === 0) {
-    grid.innerHTML = '<p style="grid-column:1/-1; text-align:center;">No tables configured. Please configure in Admin.</p>';
+    container.style.display = 'grid'; // Restore grid
+    container.innerHTML = '<p style="grid-column:1/-1; text-align:center;">No tables configured. Please configure in Admin.</p>';
     return;
   }
   
-  for (let i = 1; i <= POS_STATE.tableCount; i++) {
-    const card = document.createElement('div');
-    card.onclick = () => openPosTable(i);
+  if (POS_STATE.tableCategories && POS_STATE.tableCategories.length > 0) {
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '2rem';
     
-    const order = POS_STATE.tableOrders[i];
-    const hasOrder = order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0);
-    
-    if (hasOrder) {
-      card.className = 'pos-table-card occupied';
+    POS_STATE.tableCategories.forEach(cat => {
+      const section = document.createElement('div');
+      section.className = 'table-category-group';
       
-      let totalBill = 0;
-      const itemList = [];
-      Object.keys(order).forEach(k => {
-        if (k !== 'occupiedSince' && order[k].qty > 0) {
-          const name = order[k].dishName || order[k].name;
-          const variantSuffix = order[k].flavour ? ` (${order[k].flavour})` : '';
-          itemList.push(`${order[k].qty}x ${name}${variantSuffix}`);
-          totalBill += (order[k].qty * order[k].price);
-        }
-      });
+      const title = document.createElement('h3');
+      title.className = 'table-category-group-title';
+      title.style.fontSize = '1.25rem';
+      title.style.fontWeight = '700';
+      title.style.color = 'var(--text-secondary)';
+      title.style.marginBottom = '1rem';
+      title.textContent = cat.name;
+      section.appendChild(title);
       
-      const itemsSummary = itemList.join(', ');
+      const grid = document.createElement('div');
+      grid.className = 'pos-tables-grid';
       
-      card.innerHTML = `
-        <div class="table-card-header">
-          <span class="table-badge occupied">Occupied</span>
-          <span class="table-bill-total">₹${totalBill}</span>
-        </div>
-        <div class="table-card-body">
-          <div class="table-icon">🍕</div>
-          <div class="table-name">Table ${i}</div>
-          <div class="table-timer" id="table-timer-${i}">⏱️ --:--</div>
-        </div>
-        ${itemsSummary ? `<div class="table-items-list"><div class="table-items-summary" title="${itemsSummary}">${itemsSummary}</div></div>` : ''}
-      `;
-    } else {
-      card.className = 'pos-table-card free';
-      card.innerHTML = `
-        <div class="table-card-header">
-          <span class="table-badge free">Free</span>
-          <span></span>
-        </div>
-        <div class="table-card-body">
-          <div class="table-icon">🪑</div>
-          <div class="table-name">Table ${i}</div>
-          <div class="table-timer" id="table-timer-${i}" style="display: none;"></div>
-        </div>
-      `;
+      const count = Number(cat.count) || 0;
+      for (let i = 1; i <= count; i++) {
+        const uniqueId = `table_${cat.id}_${i}`;
+        const card = createTableCard(uniqueId, i, cat.name);
+        grid.appendChild(card);
+      }
+      
+      section.appendChild(grid);
+      container.appendChild(section);
+    });
+  } else {
+    // Fallback if no categories
+    container.style.display = 'grid'; // Restore grid
+    for (let i = 1; i <= POS_STATE.tableCount; i++) {
+      const card = createTableCard(i, i, 'General');
+      container.appendChild(card);
     }
-    grid.appendChild(card);
   }
   updateTableTimers();
 }
@@ -3677,10 +3766,24 @@ function renderLiveTablesReportContent() {
   content.innerHTML = '';
   
   const occupiedTables = [];
-  for (let i = 1; i <= POS_STATE.tableCount; i++) {
-    const order = POS_STATE.tableOrders[i];
-    if (order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0)) {
-      occupiedTables.push({ id: i, order: order });
+  
+  if (POS_STATE.tableCategories && POS_STATE.tableCategories.length > 0) {
+    POS_STATE.tableCategories.forEach(cat => {
+      const count = Number(cat.count) || 0;
+      for (let i = 1; i <= count; i++) {
+        const uniqueId = `table_${cat.id}_${i}`;
+        const order = POS_STATE.tableOrders[uniqueId];
+        if (order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0)) {
+          occupiedTables.push({ id: uniqueId, displayNum: i, categoryName: cat.name, order: order });
+        }
+      }
+    });
+  } else {
+    for (let i = 1; i <= POS_STATE.tableCount; i++) {
+      const order = POS_STATE.tableOrders[i];
+      if (order && Object.keys(order).some(k => k !== 'occupiedSince' && order[k].qty > 0)) {
+        occupiedTables.push({ id: i, displayNum: i, categoryName: 'General', order: order });
+      }
     }
   }
   
@@ -3694,6 +3797,8 @@ function renderLiveTablesReportContent() {
   
   occupiedTables.forEach(item => {
     const tableId = item.id;
+    const displayNum = item.displayNum;
+    const categoryName = item.categoryName;
     const order = item.order;
     
     // Calculate elapsed time details
@@ -3741,7 +3846,7 @@ function renderLiveTablesReportContent() {
     html += `
       <div class="report-table-card glass-card mb-4">
         <div class="report-table-header">
-          <h3 class="report-table-title">Table ${tableId}</h3>
+          <h3 class="report-table-title">Table ${displayNum} <span style="font-size: 0.95rem; font-weight: 500; color: var(--text-secondary);">(${categoryName})</span></h3>
           <div class="report-table-meta">
             <span class="report-meta-badge">Occupied since: ${timeStr} (${durationStr})</span>
           </div>
@@ -4243,17 +4348,184 @@ function proceedToCheckout() {
 //  POS ADMIN LOGIC
 // ══════════════════════════════════════
 
-async function saveAdminTableCount() {
-  const count = parseInt(document.getElementById('adminTableCount').value, 10);
-  if (isNaN(count) || count < 1) return toast('Invalid table count', 'error');
+function loadAdminTableCategories() {
+  const tbody = document.getElementById('adminTableCategoriesTable');
+  if (!tbody) return;
+  
+  tbody.innerHTML = '';
+  
+  if (!POS_STATE.tableCategories || POS_STATE.tableCategories.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding: 1.5rem 0;">No sections configured.</td></tr>';
+    return;
+  }
+  
+  POS_STATE.tableCategories.forEach(cat => {
+    const tr = document.createElement('tr');
+    tr.id = `admin-table-cat-row-${cat.id}`;
+    
+    tr.innerHTML = `
+      <td>
+        <span class="view-mode-${cat.id}">${cat.name}</span>
+        <input type="text" class="form-input edit-mode-${cat.id} hidden" value="${cat.name}" id="edit-table-cat-name-${cat.id}" style="width: 100%; max-width: 250px;" />
+      </td>
+      <td>
+        <span class="view-mode-${cat.id}">${cat.count}</span>
+        <input type="number" min="1" class="form-input edit-mode-${cat.id} hidden" value="${cat.count}" id="edit-table-cat-count-${cat.id}" style="width: 100%; max-width: 100px;" />
+      </td>
+      <td style="text-align: center;">
+        <div class="view-mode-${cat.id} flex-row" style="justify-content: center; gap: 0.5rem;">
+          <button class="btn btn--secondary btn--sm" onclick="editAdminTableCategory(${cat.id})">✏️ Edit</button>
+          <button class="btn btn--danger btn--sm" onclick="deleteAdminTableCategory(${cat.id})">🗑️ Delete</button>
+        </div>
+        <div class="edit-mode-${cat.id} hidden flex-row" style="justify-content: center; gap: 0.5rem;">
+          <button class="btn btn--success btn--sm" onclick="saveAdminTableCategoryEdit(${cat.id})">💾 Save</button>
+          <button class="btn btn--outline btn--sm" onclick="cancelAdminTableCategoryEdit(${cat.id})">❌ Cancel</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+async function addAdminTableCategory() {
+  const nameInput = document.getElementById('adminTableCategoryName');
+  const countInput = document.getElementById('adminTableCategoryCount');
+  if (!nameInput || !countInput) return;
+  
+  const name = nameInput.value.trim();
+  const count = parseInt(countInput.value, 10);
+  
+  if (!name) return toast('Please enter a section name', 'error');
+  if (isNaN(count) || count < 1) return toast('Please enter a valid table count (minimum 1)', 'error');
+  
+  let maxId = 0;
+  if (POS_STATE.tableCategories && POS_STATE.tableCategories.length > 0) {
+    POS_STATE.tableCategories.forEach(c => {
+      if (c.id > maxId) maxId = c.id;
+    });
+  } else {
+    POS_STATE.tableCategories = [];
+  }
+  
+  const newCat = {
+    id: maxId + 1,
+    name: name,
+    count: count
+  };
+  
+  POS_STATE.tableCategories.push(newCat);
+  
+  // Calculate total tables
+  let totalCount = 0;
+  POS_STATE.tableCategories.forEach(c => {
+    totalCount += c.count;
+  });
+  POS_STATE.tableCount = totalCount;
   
   try {
-    await api({ action: 'saveTableCount', count });
-    POS_STATE.tableCount = count;
-    toast('Table count saved', 'success');
-  } catch(e) {
-    toast('Failed to save table count', 'error');
+    await api({
+      action: 'saveTableCategories',
+      categoriesJson: JSON.stringify(POS_STATE.tableCategories)
+    });
+    
+    // Clear form inputs
+    nameInput.value = '';
+    countInput.value = '';
+    
+    // Synchronize local table orders state with the updated category layout
+    const serverOrders = await apiDirect({ action: 'getTablesData' });
+    initializeLocalTableOrders(serverOrders);
+    
+    toast('Table section added', 'success');
+    loadAdminTableCategories();
+    invalidateLocalCache();
+  } catch (e) {
+    console.error(e);
+    toast('Failed to add table section', 'error');
   }
+}
+
+function editAdminTableCategory(catId) {
+  document.querySelectorAll(`.view-mode-${catId}`).forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll(`.edit-mode-${catId}`).forEach(el => el.classList.remove('hidden'));
+}
+
+function cancelAdminTableCategoryEdit(catId) {
+  document.querySelectorAll(`.view-mode-${catId}`).forEach(el => el.classList.remove('hidden'));
+  document.querySelectorAll(`.edit-mode-${catId}`).forEach(el => el.classList.add('hidden'));
+  loadAdminTableCategories();
+}
+
+async function saveAdminTableCategoryEdit(catId) {
+  const newName = document.getElementById(`edit-table-cat-name-${catId}`).value.trim();
+  const newCount = parseInt(document.getElementById(`edit-table-cat-count-${catId}`).value, 10);
+  
+  if (!newName) return toast('Please enter a section name', 'error');
+  if (isNaN(newCount) || newCount < 1) return toast('Please enter a valid table count (minimum 1)', 'error');
+  
+  const cat = POS_STATE.tableCategories.find(c => c.id === catId);
+  if (!cat) return;
+  
+  cat.name = newName;
+  cat.count = newCount;
+  
+  // Calculate total tables
+  let totalCount = 0;
+  POS_STATE.tableCategories.forEach(c => {
+    totalCount += c.count;
+  });
+  POS_STATE.tableCount = totalCount;
+  
+  try {
+    await api({
+      action: 'saveTableCategories',
+      categoriesJson: JSON.stringify(POS_STATE.tableCategories)
+    });
+    
+    const serverOrders = await apiDirect({ action: 'getTablesData' });
+    initializeLocalTableOrders(serverOrders);
+    
+    toast('Table section updated', 'success');
+    loadAdminTableCategories();
+    invalidateLocalCache();
+  } catch (e) {
+    console.error(e);
+    toast('Failed to update table section', 'error');
+  }
+}
+
+async function deleteAdminTableCategory(catId) {
+  if (!confirm('Are you sure you want to delete this table section? All unoccupied table data in it will be lost.')) return;
+  
+  POS_STATE.tableCategories = POS_STATE.tableCategories.filter(c => c.id !== catId);
+  
+  // Calculate total tables
+  let totalCount = 0;
+  POS_STATE.tableCategories.forEach(c => {
+    totalCount += c.count;
+  });
+  POS_STATE.tableCount = totalCount;
+  
+  try {
+    await api({
+      action: 'saveTableCategories',
+      categoriesJson: JSON.stringify(POS_STATE.tableCategories)
+    });
+    
+    const serverOrders = await apiDirect({ action: 'getTablesData' });
+    initializeLocalTableOrders(serverOrders);
+    
+    toast('Table section deleted', 'success');
+    loadAdminTableCategories();
+    invalidateLocalCache();
+  } catch (e) {
+    console.error(e);
+    toast('Failed to delete table section', 'error');
+  }
+}
+
+function invalidateLocalCache() {
+  localStorage.removeItem(CACHE_TIMESTAMP_KEY);
 }
 
 async function loadAdminCategories() {
@@ -4596,9 +4868,9 @@ async function loadAdminPOSConfig() {
   
   try {
     const res = await api({ action: 'getTableCount' });
-    const input = document.getElementById('adminTableCount');
-    if (input) input.value = res.count || '';
     POS_STATE.tableCount = res.count || 0;
+    POS_STATE.tableCategories = res.categories || [];
+    loadAdminTableCategories();
   } catch(e) {
     console.error('Failed to load table count in POS configuration', e);
   }
