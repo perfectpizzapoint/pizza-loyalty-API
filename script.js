@@ -5267,16 +5267,7 @@ function initResizer() {
   
   divider.addEventListener('mousedown', onStartDrag);
   divider.addEventListener('touchstart', onStartDrag, { passive: true });
-}
 
-function switchAdminTab(tabId, btn) {
-  // Hide all panels
-  const panels = document.querySelectorAll('.admin-tab-panel');
-  panels.forEach(panel => {
-    panel.classList.remove('active');
-  });
-
-  // Deactivate all nav items
   const navItems = document.querySelectorAll('.admin-nav-item');
   navItems.forEach(item => {
     item.classList.remove('active');
