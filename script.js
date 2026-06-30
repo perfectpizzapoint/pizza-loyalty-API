@@ -597,6 +597,7 @@ function showSection(name) {
     document.getElementById('sectionHome').classList.add('active');
     activeBtn = document.getElementById('navHome');
     activeBtn.classList.add('active');
+    updateHomePendingItemsUI();
   }
   
   updateNavIndicator(activeBtn);
@@ -649,6 +650,8 @@ async function restoreLoyaltyState() {
   if (formOpen && savedMobile) {
     await handleAddEntry();
   }
+  
+  updateHomePendingItemsUI();
 }
 
 // ──── FETCH CONFIG ON LOAD ────
@@ -946,6 +949,44 @@ function closeEntryForm() {
   localStorage.removeItem('ppp_loyalty_message');
   localStorage.removeItem('ppp_pendingOrderItems');
   resetPaymentMode();
+  updateHomePendingItemsUI();
+}
+
+function updateHomePendingItemsUI() {
+  const pendingItemsJson = localStorage.getItem('ppp_pendingOrderItems');
+  const card = document.getElementById('cardPendingOrderItems');
+  const tbody = document.getElementById('homeOrderItemsBody');
+  
+  if (!card || !tbody) return;
+  
+  if (pendingItemsJson) {
+    try {
+      const items = JSON.parse(pendingItemsJson);
+      if (items && items.length > 0) {
+        tbody.innerHTML = '';
+        items.forEach(item => {
+          const qty = Number(item.qty) || 0;
+          const price = Number(item.price) || 0;
+          const total = qty * price;
+          const tr = document.createElement('tr');
+          const variantSuffix = item.flavour ? ` (${item.flavour})` : '';
+          tr.innerHTML = `
+            <td style="padding: 0.5rem; text-align: left; font-size: 0.9rem;">${item.dishName}${variantSuffix}</td>
+            <td style="padding: 0.5rem; text-align: center; font-size: 0.9rem;">${qty}</td>
+            <td style="padding: 0.5rem; text-align: right; font-size: 0.9rem;">₹${price}</td>
+            <td style="padding: 0.5rem; text-align: right; font-weight: 700; font-size: 0.9rem;">₹${total}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+        show('cardPendingOrderItems');
+        return;
+      }
+    } catch (e) {
+      console.error('Error parsing pending order items for UI', e);
+    }
+  }
+  
+  hide('cardPendingOrderItems');
 }
 
 // ══════════════════════════════════════
@@ -1088,6 +1129,7 @@ async function handleSaveEntry() {
     localStorage.removeItem('ppp_loyalty_amount');
     localStorage.removeItem('ppp_loyalty_message');
     localStorage.removeItem('ppp_pendingOrderItems');
+    updateHomePendingItemsUI();
 
     // Optimistically update cache
     const newCacheEntry = {
@@ -1162,8 +1204,8 @@ async function handleSaveEntry() {
   localStorage.removeItem('ppp_loyalty_mobile');
   localStorage.removeItem('ppp_loyalty_amount');
   localStorage.removeItem('ppp_loyalty_message');
-  
   localStorage.removeItem('ppp_pendingOrderItems');
+  updateHomePendingItemsUI();
 
   // ── Background: persist to Google Sheets (original flow) ──
   try {
@@ -1266,6 +1308,7 @@ async function handleReceiptOnly() {
     localStorage.removeItem('ppp_loyalty_amount');
     localStorage.removeItem('ppp_loyalty_message');
     localStorage.removeItem('ppp_pendingOrderItems');
+    updateHomePendingItemsUI();
     
     // Optimistically update cache
     const newCacheEntry = {
@@ -1344,6 +1387,7 @@ async function handleReceiptOnly() {
     localStorage.removeItem('ppp_loyalty_amount');
     localStorage.removeItem('ppp_loyalty_message');
     localStorage.removeItem('ppp_pendingOrderItems');
+    updateHomePendingItemsUI();
 
     // Optimistically update cache and trigger background sync
     const newCacheEntry = {
@@ -1485,6 +1529,12 @@ function renderAllEntriesTable(entries) {
         <td><div style="display: flex; flex-wrap: wrap; gap: 4px;">${modesHtml}</div></td>
         <td>${itemsHtml}</td>
         <td style="text-align: center; font-weight: 600; color: var(--text-secondary);">Visit #${visitNum}</td>
+        <td style="text-align: center;">
+          <div class="flex-row" style="justify-content: center; gap: 0.35rem;">
+            <button class="btn btn--secondary btn--sm" onclick="initiateEditEntry(${absoluteIdx})" style="padding: 0.35rem 0.5rem; font-size: 0.75rem;" title="Edit Entry">✏️</button>
+            <button class="btn btn--danger btn--sm" onclick="initiateDeleteEntry(${absoluteIdx})" style="padding: 0.35rem 0.5rem; font-size: 0.75rem;" title="Delete Entry">🗑️</button>
+          </div>
+        </td>
       `;
       tbody.appendChild(tr);
 
@@ -1669,6 +1719,11 @@ function showEntryDetails(index) {
       <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-input); border-radius:8px; padding:0.75rem; width: 100%;">
         ${itemsHtml}
       </div>
+    </div>
+    
+    <div class="flex-row mt-4" style="gap: 0.75rem; width: 100%;">
+      <button class="btn btn--secondary btn--block" onclick="closeEntryDetailsModal(); initiateEditEntry(${index});" style="font-size: 0.9rem;">✏️ Edit Entry</button>
+      <button class="btn btn--danger btn--block" onclick="closeEntryDetailsModal(); initiateDeleteEntry(${index});" style="font-size: 0.9rem;">🗑️ Delete Entry</button>
     </div>
   `;
 
@@ -4295,7 +4350,8 @@ function proceedToCheckout() {
           categoryName: order[key].categoryName || 'Unknown',
           dishName: order[key].dishName || order[key].name,
           flavour: order[key].flavour || '',
-          qty: order[key].qty
+          qty: order[key].qty,
+          price: order[key].price || 0
         });
       }
     });
@@ -4336,6 +4392,9 @@ function proceedToCheckout() {
   hide('rowWhatsapp');
   hide('rowDetailsBtn');
   
+  // Reset the POS view back to the main table page
+  showPosTables();
+
   // Switch to home section (Loyalty)
   showSection('home');
   
@@ -5289,6 +5348,237 @@ function switchAdminTab(tabId, btn) {
   }
   if (btn) {
     btn.classList.add('active');
+  }
+}
+
+/* ───── Edit/Delete Entries with Admin Authorization ───── */
+function initiateEditEntry(index) {
+  window.ADMIN_CONFIRM_ACTION = { type: 'edit', index: index };
+  document.getElementById('confirmAdminPassInput').value = '';
+  hide('errConfirmAdminPass');
+  document.getElementById('modalAdminPasswordConfirm').classList.add('open');
+  document.getElementById('confirmAdminPassInput').focus();
+}
+
+function initiateDeleteEntry(index) {
+  window.ADMIN_CONFIRM_ACTION = { type: 'delete', index: index };
+  document.getElementById('confirmAdminPassInput').value = '';
+  hide('errConfirmAdminPass');
+  document.getElementById('modalAdminPasswordConfirm').classList.add('open');
+  document.getElementById('confirmAdminPassInput').focus();
+}
+
+function closeAdminPasswordConfirmModal() {
+  document.getElementById('modalAdminPasswordConfirm').classList.remove('open');
+  document.getElementById('confirmAdminPassInput').value = '';
+  hide('errConfirmAdminPass');
+}
+
+async function submitAdminPasswordConfirm() {
+  const passInput = document.getElementById('confirmAdminPassInput');
+  const pass = passInput.value.trim();
+  const errEl = document.getElementById('errConfirmAdminPass');
+  
+  if (!pass) {
+    toast('Password cannot be empty.', 'error');
+    return;
+  }
+  
+  hide('errConfirmAdminPass');
+  const btn = document.getElementById('btnSubmitAdminPasswordConfirm');
+  const oldText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Verifying...';
+  
+  try {
+    const res = await api({ action: 'verifyAdminPassword', inputPass: pass });
+    if (!res || !res.authenticated) {
+      show('errConfirmAdminPass');
+      passInput.focus();
+      // Apply shake animation
+      const modal = document.querySelector('#modalAdminPasswordConfirm .modal');
+      if (modal) {
+        modal.classList.add('error-shake');
+        setTimeout(() => modal.classList.remove('error-shake'), 500);
+      }
+      btn.disabled = false;
+      btn.innerHTML = oldText;
+      return;
+    }
+    
+    // Password verified!
+    closeAdminPasswordConfirmModal();
+    const action = window.ADMIN_CONFIRM_ACTION;
+    if (action.type === 'delete') {
+      deleteEntryAction(action.index);
+    } else if (action.type === 'edit') {
+      openEditEntryModal(action.index);
+    }
+  } catch (e) {
+    toast('Error verifying password: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = oldText;
+  }
+}
+
+async function deleteEntryAction(index) {
+  const entry = ALL_ENTRIES_CACHE[index];
+  if (!entry) return;
+  
+  if (!confirm(`Are you sure you want to permanently delete this entry?\nMobile: +91 ${entry.mobile}\nAmount: ₹${entry.amount}\nSource: ${entry.source}`)) {
+    return;
+  }
+  
+  toast('Deleting entry...', 'info');
+  try {
+    const res = await apiDirect({
+      action: 'deleteEntryRow',
+      mobile: entry.mobile,
+      date: entry.date,
+      time: entry.time,
+      source: entry.source
+    });
+    
+    if (res && res.error) {
+      toast(res.error, 'error');
+      return;
+    }
+    
+    // Success: remove locally
+    ALL_ENTRIES_CACHE.splice(index, 1);
+    setCacheItem('getAllEntries', ALL_ENTRIES_CACHE);
+    filterEntries();
+    toast('Entry deleted successfully!', 'success');
+    
+    // Invalidate dashboard/re-sync
+    if (typeof downloadSheetCache === 'function') {
+      downloadSheetCache(true);
+    }
+  } catch (e) {
+    toast('Failed to delete entry: ' + e.message, 'error');
+  }
+}
+
+function openEditEntryModal(index) {
+  const entry = ALL_ENTRIES_CACHE[index];
+  if (!entry) return;
+  
+  window.EDITING_ENTRY_INDEX = index;
+  
+  document.getElementById('editEntryMobile').value = entry.mobile || '';
+  document.getElementById('editEntryAmount').value = entry.amount || '';
+  document.getElementById('editEntryCash').value = entry.cash || '';
+  document.getElementById('editEntryUpi').value = entry.upi || '';
+  document.getElementById('editEntryCard').value = entry.card || '';
+  document.getElementById('editEntryMessage').value = entry.message || '';
+  
+  hide('errEditEntrySplit');
+  document.getElementById('modalEditEntry').classList.add('open');
+}
+
+function closeEditEntryModal() {
+  document.getElementById('modalEditEntry').classList.remove('open');
+  hide('errEditEntrySplit');
+}
+
+function autoDistributeEditAmount() {
+  const total = parseInt(document.getElementById('editEntryAmount').value, 10) || 0;
+  const cash = parseInt(document.getElementById('editEntryCash').value, 10) || 0;
+  const upi = parseInt(document.getElementById('editEntryUpi').value, 10) || 0;
+  const card = parseInt(document.getElementById('editEntryCard').value, 10) || 0;
+  
+  if (cash > 0 && upi === 0 && card === 0) {
+    document.getElementById('editEntryCash').value = total;
+  } else if (upi > 0 && cash === 0 && card === 0) {
+    document.getElementById('editEntryUpi').value = total;
+  } else if (card > 0 && cash === 0 && upi === 0) {
+    document.getElementById('editEntryCard').value = total;
+  } else if (cash === 0 && upi === 0 && card === 0) {
+    document.getElementById('editEntryCash').value = total;
+  }
+}
+
+async function saveEditedEntry() {
+  const index = window.EDITING_ENTRY_INDEX;
+  const entry = ALL_ENTRIES_CACHE[index];
+  if (!entry) return;
+  
+  const newMobile = document.getElementById('editEntryMobile').value.trim();
+  if (newMobile && !/^\d{10}$/.test(newMobile)) {
+    toast('Please enter a valid 10-digit mobile number or leave it empty.', 'error');
+    return;
+  }
+  
+  const newAmount = parseInt(document.getElementById('editEntryAmount').value, 10);
+  if (isNaN(newAmount) || newAmount < 0) {
+    toast('Billing amount must be a positive number.', 'error');
+    return;
+  }
+  
+  const newCash = parseInt(document.getElementById('editEntryCash').value, 10) || 0;
+  const newUpi = parseInt(document.getElementById('editEntryUpi').value, 10) || 0;
+  const newCard = parseInt(document.getElementById('editEntryCard').value, 10) || 0;
+  const newMessage = document.getElementById('editEntryMessage').value.trim();
+  
+  // Validate breakdown sum matches amount
+  if (newCash + newUpi + newCard !== newAmount) {
+    show('errEditEntrySplit');
+    const modal = document.querySelector('#modalEditEntry .modal');
+    if (modal) {
+      modal.classList.add('error-shake');
+      setTimeout(() => modal.classList.remove('error-shake'), 500);
+    }
+    return;
+  }
+  
+  hide('errEditEntrySplit');
+  const btn = document.getElementById('btnSaveEditEntry');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  
+  try {
+    const res = await apiDirect({
+      action: 'updateEntryRow',
+      mobile: entry.mobile,
+      date: entry.date,
+      time: entry.time,
+      source: entry.source,
+      newMobile: newMobile,
+      newAmount: newAmount,
+      newCash: newCash,
+      newUpi: newUpi,
+      newCard: newCard,
+      newMessage: newMessage
+    });
+    
+    if (res && res.error) {
+      toast(res.error, 'error');
+      return;
+    }
+    
+    // Update locally
+    ALL_ENTRIES_CACHE[index].mobile = newMobile;
+    ALL_ENTRIES_CACHE[index].amount = newAmount;
+    ALL_ENTRIES_CACHE[index].cash = newCash;
+    ALL_ENTRIES_CACHE[index].upi = newUpi;
+    ALL_ENTRIES_CACHE[index].card = newCard;
+    ALL_ENTRIES_CACHE[index].message = newMessage;
+    
+    setCacheItem('getAllEntries', ALL_ENTRIES_CACHE);
+    filterEntries();
+    closeEditEntryModal();
+    toast('Entry updated successfully!', 'success');
+    
+    // Invalidate dashboard/re-sync
+    if (typeof downloadSheetCache === 'function') {
+      downloadSheetCache(true);
+    }
+  } catch (e) {
+    toast('Failed to update entry: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Save Changes';
   }
 }
 
