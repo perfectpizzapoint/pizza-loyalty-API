@@ -96,6 +96,29 @@
       </button>
     </div>
 
+    <!-- Step 1.5: Pending Receipt Items (visible when checkout initiated from POS) -->
+    <div class="card card-white mt-3 hidden slide-up" id="cardPendingOrderItems">
+      <div class="card__title">
+        <div class="icon-circle">🧾</div>
+        Receipt Items
+      </div>
+      <div class="glass-table-wrap" style="max-height: 250px; overflow-y: auto;">
+        <table class="entry-table" style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr>
+              <th style="text-align: left;">Item</th>
+              <th style="text-align: center; width: 60px;">Qty</th>
+              <th style="text-align: right; width: 80px;">Price</th>
+              <th style="text-align: right; width: 90px;">Total</th>
+            </tr>
+          </thead>
+          <tbody id="homeOrderItemsBody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Step 2: Entry Form (hidden initially) -->
     <div class="card card-white mt-3 hidden slide-up" id="cardEntryForm">
       <div class="card__title">
@@ -313,6 +336,7 @@
                 <th>Payment Modes</th>
                 <th>Ordered Items</th>
                 <th style="text-align: center;">Visit #</th>
+                <th style="text-align: center; width: 110px;">Actions</th>
               </tr>
             </thead>
             <tbody id="allEntriesTableBody">
@@ -983,6 +1007,84 @@
     </div>
     <div class="modal__body" id="modalEntryDetailsBody">
       <!-- Details dynamically loaded via JS -->
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ ADMIN PASSWORD CONFIRM MODAL ═══════ -->
+<div class="modal-overlay" id="modalAdminPasswordConfirm">
+  <div class="modal glass-modal" style="max-width: 380px;">
+    <div class="modal__header">
+      <div class="modal__title">
+        <span class="icon">🔑</span> Verify Admin
+      </div>
+      <button class="modal__close" onclick="closeAdminPasswordConfirmModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="modal__body">
+      <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem; text-align: center;">
+        Please enter the Admin Password to authorize this change.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="confirmAdminPassInput">Admin Password</label>
+        <input type="password" class="form-input" id="confirmAdminPassInput" placeholder="Enter password" onkeydown="if(event.key==='Enter') submitAdminPasswordConfirm()" />
+      </div>
+      <div class="error-msg" id="errConfirmAdminPass" style="display: none; text-align: center; margin-bottom: 0.75rem;">Incorrect password. Please try again.</div>
+      <button class="btn btn--primary btn--block btn--lg pulse-hover" id="btnSubmitAdminPasswordConfirm" onclick="submitAdminPasswordConfirm()">
+        Confirm Authorization
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ EDIT ENTRY MODAL ═══════ -->
+<div class="modal-overlay" id="modalEditEntry">
+  <div class="modal glass-modal" style="max-width: 460px;">
+    <div class="modal__header">
+      <div class="modal__title">
+        <span class="icon">✏️</span> Edit Entry
+      </div>
+      <button class="modal__close" onclick="closeEditEntryModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="modal__body">
+      <div class="form-group">
+        <label class="form-label" for="editEntryMobile">Mobile Number</label>
+        <input type="text" class="form-input" id="editEntryMobile" placeholder="10-digit number or blank for walk-in" maxlength="10" oninput="this.value=this.value.replace(/\D/g,'')" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="editEntryAmount">Billing Amount (₹)</label>
+        <input type="number" min="0" class="form-input" id="editEntryAmount" oninput="autoDistributeEditAmount()" />
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" style="font-weight: 700; color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.25rem;">Payment breakdown (Total must match amount)</label>
+        <div class="form-row-responsive" style="gap: 0.5rem;">
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label" for="editEntryCash" style="font-size: 0.8rem;">Cash</label>
+            <input type="number" min="0" class="form-input" id="editEntryCash" placeholder="0" />
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label" for="editEntryUpi" style="font-size: 0.8rem;">UPI</label>
+            <input type="number" min="0" class="form-input" id="editEntryUpi" placeholder="0" />
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label" for="editEntryCard" style="font-size: 0.8rem;">Card</label>
+            <input type="number" min="0" class="form-input" id="editEntryCard" placeholder="0" />
+          </div>
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" for="editEntryMessage">Message (Optional)</label>
+        <input type="text" class="form-input" id="editEntryMessage" placeholder="Add note..." />
+      </div>
+      <div class="error-msg" id="errEditEntrySplit" style="display: none; text-align: center; margin-bottom: 0.75rem;">Payment breakdown sum does not match total amount.</div>
+      <button class="btn btn--primary btn--block btn--lg pulse-hover" id="btnSaveEditEntry" onclick="saveEditedEntry()">
+        Save Changes
+      </button>
     </div>
   </div>
 </div>
